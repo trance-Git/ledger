@@ -122,6 +122,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat-manage-row .fixed-badge{font-size:10px;color:var(--orange);background:var(--orange-bg);padding:2px 6px;border-radius:5px;}
 .icon-btn{background:none;border:none;color:var(--sub2);font-size:17px;cursor:pointer;padding:6px;}
 .help{font-size:12px;color:var(--sub2);line-height:1.6;margin-top:10px;}
+.ver-line{display:flex;align-items:center;justify-content:center;gap:14px;font-size:11.5px;color:var(--sub2);padding:16px 0 6px;}
+.btn-link{background:none;border:none;color:var(--blue);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0;}
 .help a{color:var(--blue);}
 
 /* ---- modal ---- */
@@ -243,6 +245,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <input type="file" id="import-file" accept="application/json" style="display:none;">
       <p class="help"><i class="ti ti-alert-triangle" style="color:var(--orange);"></i> 資料只存在這支手機裡。若清除瀏覽器資料或更換手機，紀錄會消失，建議定期匯出備份存到雲端硬碟或傳給自己。</p>
+    </div>
+
+    <div class="ver-line">
+      <span>版本 <b id="app-ver"></b></span>
+      <button class="btn-link" id="force-update-btn">檢查更新</button>
     </div>
   </div>
 </div>
@@ -384,7 +391,7 @@ const DEFAULT_CATEGORIES = [
 
 // 關鍵字 → 分類。品名只要「包含」關鍵字即命中，order 小的先比對。
 const DEFAULT_RULES = [
-  ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,蔬菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,番茄,蕃茄,小黃瓜,茄子,南瓜,玉米,青椒,彩椒,菇,金針,豆芽,蔥,薑,蒜,香菜,九層塔,水果,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,梨,棗,柚,檸檬,酪梨,雞蛋,雞胸,雞腿,豬肉,牛肉,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蝦,蛤蜊,魚,豆腐,豆干,生鮮,牛奶,鮮奶,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,米,麵條,麵粉,油,鹽,糖,醬油,醋,味精,胡椒,調味'],
+  ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,蔬菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,番茄,蕃茄,小黃瓜,茄子,南瓜,玉米,青椒,彩椒,菇,金針,豆芽,蔥,薑,蒜,香菜,九層塔,水果,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,梨,棗,柚,檸檬,酪梨,雞蛋,雞胸,雞腿,豬肉,牛肉,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蝦,蛤蜊,魚,豆腐,豆干,生鮮,牛奶,鮮奶,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,鹽,砂糖,白糖,黑糖,冰糖,醬油,醋,味精,胡椒,調味'],
   ['daily', '衛生紙,面紙,抽取式,捲筒,濕紙巾,洗髮,潤髮,沐浴,肥皂,香皂,牙膏,牙刷,牙線,漱口,洗面乳,洗衣精,洗衣粉,柔軟精,漂白,洗碗精,清潔劑,菜瓜布,垃圾袋,保鮮膜,夾鏈袋,鋁箔,紙巾,棉花棒,刮鬍,衛生棉,尿布,濕巾,除濕,樟腦,芳香,殺蟲,蚊香,電池,燈泡,口罩,酒精,乾洗手,拖把,掃把,抹布,手套,日用'],
   ['fuel', '92無鉛,95無鉛,98無鉛,無鉛汽油,柴油,汽油,加油,中油,台塑石油,機油,gas,fuel'],
   ['food', '便當,飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,茶葉,麵包,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,超商,7-11,全家,萊爾富,OK超商,星巴克,麥當勞,肯德基,摩斯,漢堡,披薩,壽司,拉麵,火鍋,滷味,鹹酥雞,便利商店'],
@@ -397,6 +404,7 @@ const DEFAULT_RULES = [
   ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
 ];
 
+const APP_VERSION = '2.1';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -1086,24 +1094,55 @@ function loadScript(src){
     document.head.appendChild(s);
   });
 }
+/* 從收據文字抓消費金額。
+   關鍵：發票上「隨機碼 9321  總計 113」常印在同一行，所以必須取
+   關鍵字「後面緊接」的那個數字，不能拿整行的最大值。 */
 function parseAmountFromText(text){
-  const lines = text.split(/\n/).map(l=>l.trim()).filter(Boolean);
-  const keywords = ['合計','總計','應付金額','實付金額','消費金額','總金額','應收金額','金額','total','Total','TOTAL'];
-  const candidates = [];
+  // 數字越可信的欄位優先權越高
+  const KEYS = [
+    ['應付金額',10],['實付金額',10],['應收金額',10],['消費金額',10],['總金額',10],
+    ['總計',9],['合計',9],['total',9],
+    ['應付',8],['實付',8],['現金',6],['小計',5],['金額',4],
+  ];
+  // 這些欄位後面的數字絕不是消費金額
+  const BLOCK = /(隨機碼|發票號碼|統一編號|統編|賣方|買方|收銀|機號|序號|卡號|會員|電話|地址|營業人|課稅別|格式|載具)/;
+
+  const lines = String(text).split(/\n/).map(l => l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  let best = null;
+
   for (const line of lines){
-    const nums = line.match(/[\d,]{2,}(?:\.\d+)?/g);
-    if (!nums) continue;
-    const hasKeyword = keywords.some(k => line.includes(k));
-    for (const n of nums){
-      const val = parseFloat(n.replace(/,/g,''));
-      if (!isNaN(val) && val > 0 && val < 10000000) candidates.push({ val, hasKeyword });
+    const low = line.toLowerCase();
+    for (const [kw, pri] of KEYS){
+      const i = low.indexOf(kw.toLowerCase());
+      if (i < 0) continue;
+      const after = line.slice(i + kw.length);
+      // 關鍵字與數字間可能夾雜 : ： $ NT 等符號
+      const m = after.match(/^[\s:：=$＄]*(?:NT|nt|新台幣|元)?[\s:：$＄]*(\d[\d,]*(?:\.\d{1,2})?)/)
+             || after.match(/(\d[\d,]*(?:\.\d{1,2})?)/);
+      if (!m) continue;
+      const v = parseFloat(m[1].replace(/,/g,''));
+      if (!(v > 0) || v >= 1000000) continue;
+      if (!best || pri > best.pri) best = { v, pri };
     }
   }
-  if (!candidates.length) return null;
-  const keyworded = candidates.filter(c=>c.hasKeyword);
-  const pool = keyworded.length ? keyworded : candidates;
-  pool.sort((a,b)=>b.val-a.val);
-  return pool[0].val;
+  if (best) return best.v;
+
+  // 完全沒抓到關鍵字時的備援：先排除明顯不是金額的行與長數字，再取最大值
+  const pool = [];
+  for (const line of lines){
+    if (BLOCK.test(line)) continue;
+    if (/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}/.test(line)) continue;    // 日期
+    if (/[A-Z]{2}[-\s]?\d{8}/.test(line)) continue;                  // 發票字軌號碼
+    for (const t of (line.match(/\d[\d,]*(?:\.\d{1,2})?/g) || [])){
+      const raw = t.replace(/,/g,'');
+      if (/^\d{7,}$/.test(raw)) continue;                            // 統編等長數字
+      const v = parseFloat(raw);
+      if (v > 0 && v < 1000000) pool.push(v);
+    }
+  }
+  if (!pool.length) return null;
+  pool.sort((a,b)=>b-a);
+  return pool[0];
 }
 
 /* =========================================================
@@ -1377,15 +1416,43 @@ document.getElementById('page-list').classList.add('active');
 /* =========================================================
    Init
    ========================================================= */
+document.getElementById('app-ver').textContent = APP_VERSION;
+document.getElementById('force-update-btn').addEventListener('click', async () => {
+  toast('檢查更新中...');
+  try{
+    if ('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.update()));
+    }
+    // 繞過快取直接比對線上版本號
+    const res = await fetch(location.pathname + '?v=' + Date.now(), {cache:'no-store'});
+    const txt = await res.text();
+    const m = txt.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if (m && m[1] !== APP_VERSION){ toast('發現新版 ' + m[1] + '，重新載入中'); setTimeout(()=>location.reload(true), 900); }
+    else toast('目前已是最新版 ' + APP_VERSION);
+  }catch(e){ toast('無法連線，請確認網路'); }
+});
+
 loadLocal();
 
 // 本機開發用的檢測掛勾，正式網址不會掛上去
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1'){
-  window.__ledger = { parseInvoiceQR, classifyItem, onScanned, get draft(){ return invoiceDraft; } };
+  window.__ledger = { parseInvoiceQR, classifyItem, onScanned, parseAmountFromText, get draft(){ return invoiceDraft; } };
 }
 
+/* Service Worker：註冊後主動檢查更新。新版接手控制權時自動重新載入一次，
+   避免手機停在舊版畫面（舊版 cache-first 就是這樣卡住的）。 */
 if ('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
-  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.update().catch(()=>{});
+    setInterval(() => reg.update().catch(()=>{}), 60*60*1000);
+  }).catch(()=>{});
 }
 </script>
 </body>
