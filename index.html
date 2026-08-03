@@ -92,6 +92,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .rec-row .tag-fixed{font-size:9.5px;background:var(--orange-bg);color:var(--orange);padding:1px 5px;border-radius:5px;margin-left:4px;vertical-align:1px;}
 .filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
 .filter-bar select,.filter-bar input{padding:7px 9px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12.5px;}
+.month-nav{display:flex;align-items:stretch;gap:6px;margin-bottom:10px;}
+.month-nav input{flex:1;min-width:0;text-align:center;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:14px;font-weight:600;}
+.month-nav button{width:42px;flex-shrink:0;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.month-nav button#m-all{width:auto;padding:0 14px;font-size:13px;font-weight:600;}
+.month-nav button#m-all.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+.month-nav input:disabled{opacity:.4;}
+.date-quick{display:flex;gap:7px;margin-bottom:8px;}
+.date-quick button{flex:1;padding:9px 0;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;cursor:pointer;}
+.date-quick button.active{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);font-weight:600;}
 .empty{text-align:center;padding:2.6rem 1rem;color:var(--sub2);font-size:13px;}
 .empty i{font-size:30px;display:block;margin-bottom:10px;}
 
@@ -188,8 +197,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
   <!-- 明細 -->
   <div id="page-list" class="page">
-    <div class="filter-bar">
+    <div class="month-nav">
+      <button id="m-prev" aria-label="上個月"><i class="ti ti-chevron-left"></i></button>
       <input type="month" id="f-month">
+      <button id="m-next" aria-label="下個月"><i class="ti ti-chevron-right"></i></button>
+      <button id="m-all">全部</button>
+    </div>
+    <div class="filter-bar">
       <select id="f-pay"><option value="">全部方式</option><option value="cash">現金</option><option value="credit">信用卡</option></select>
       <select id="f-cat"><option value="">全部分類</option></select>
       <select id="f-fixed"><option value="">全部項目</option><option value="1">僅固定支出</option><option value="0">僅一般支出</option></select>
@@ -204,7 +218,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button data-period="month">月</button>
       <button data-period="year">年</button>
     </div>
-    <div class="field" id="period-picker-wrap"></div>
+    <div class="month-nav" id="period-picker-wrap"></div>
     <div class="summary-grid">
       <div class="summary-card total"><div class="lbl">總支出</div><div class="val" id="s-total">NT$0</div></div>
       <div class="summary-card"><div class="lbl">💵 現金</div><div class="val" id="s-cash">NT$0</div></div>
@@ -292,7 +306,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
     <div class="field"><label>分類</label><div class="cat-grid" id="r-cat-grid"></div></div>
 
-    <div class="field"><label>日期</label><input type="date" id="r-date"></div>
+    <div class="field"><label>日期</label>
+      <div class="date-quick" id="date-quick">
+        <button type="button" data-back="0">今天</button>
+        <button type="button" data-back="1">昨天</button>
+        <button type="button" data-back="2">前天</button>
+      </div>
+      <input type="date" id="r-date">
+    </div>
 
     <div class="chk-row"><input type="checkbox" id="r-fixed"><label for="r-fixed">列為固定支出</label></div>
 
@@ -399,7 +420,8 @@ const DEFAULT_CATEGORIES = [
 const DEFAULT_RULES = [
   ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,蔬菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,番茄,蕃茄,小黃瓜,茄子,南瓜,玉米,青椒,彩椒,菇,金針,豆芽,蔥,薑,蒜,香菜,九層塔,水果,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,梨,棗,柚,檸檬,酪梨,雞蛋,雞胸,雞腿,豬肉,牛肉,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蝦,蛤蜊,魚,豆腐,豆干,生鮮,牛奶,鮮奶,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,鹽,砂糖,白糖,黑糖,冰糖,醬油,醋,味精,胡椒,調味'],
   ['daily', '衛生紙,面紙,抽取式,捲筒,濕紙巾,洗髮,潤髮,沐浴,肥皂,香皂,牙膏,牙刷,牙線,漱口,洗面乳,洗衣精,洗衣粉,柔軟精,漂白,洗碗精,清潔劑,菜瓜布,垃圾袋,保鮮膜,夾鏈袋,鋁箔,紙巾,棉花棒,刮鬍,衛生棉,尿布,濕巾,除濕,樟腦,芳香,殺蟲,蚊香,電池,燈泡,口罩,酒精,乾洗手,拖把,掃把,抹布,手套,日用'],
-  ['fuel', '92無鉛,95無鉛,98無鉛,無鉛汽油,柴油,汽油,加油,中油,台塑石油,機油,gas,fuel'],
+  // 發票上油品常印國字（九五無鉛），故「無鉛」單獨列一條涵蓋所有寫法
+  ['fuel', '無鉛,汽油,柴油,加油,中油,台塑石油,台亞,山隆,全國加油站,機油,gas,fuel'],
   ['food', '便當,飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,茶葉,麵包,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,超商,7-11,全家,萊爾富,OK超商,星巴克,麥當勞,肯德基,摩斯,漢堡,披薩,壽司,拉麵,火鍋,滷味,鹹酥雞,便利商店'],
   ['transport', '停車,停車費,計程車,uber,捷運,悠遊卡,一卡通,高鐵,台鐵,客運,公車,機票,ETC,過路費,國道,輪胎,保養,維修,洗車'],
   ['medical', '藥,診所,醫院,掛號,牙醫,眼科,健保,口罩,維他命,維生素,保健,葉黃素,益生菌,OK繃,藥局,藥妝'],
@@ -410,7 +432,7 @@ const DEFAULT_RULES = [
   ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
 ];
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -502,7 +524,15 @@ function renderHeaderTotal(){
 
 /* 內建資料的種子版本。往上加時只補「這個版本新增的」預設分類/規則，
    已存在的 id 一律不覆蓋，使用者刪掉的也不會被重新塞回來。 */
-const SEED_VERSION = 2;
+const SEED_VERSION = 3;
+
+const seedRuleId = (cat, i) => 'seed-' + cat + '-' + i;
+function buildSeedRules(){
+  return DEFAULT_RULES.map(([cat, kws], i) => ({
+    id: seedRuleId(cat, i), category: cat,
+    keywords: kws.split(',').map(s=>s.trim()).filter(Boolean), order: i + 1,
+  }));
+}
 
 async function loadLocal(){
   records = await idbGetAll('records');
@@ -521,12 +551,21 @@ async function loadLocal(){
       }
     }
   }
-  if (!rules.length && seeded < 2){
-    rules = DEFAULT_RULES.map(([cat, kws], i) => ({
-      id: 'seed-' + cat + '-' + i, category: cat,
-      keywords: kws.split(',').map(s=>s.trim()).filter(Boolean), order: i + 1,
-    }));
+  if (!rules.length){
+    rules = buildSeedRules();
     for (const r of rules) await idbPut('rules', r);
+  } else if (seeded < 3){
+    // 把新版補充的預設關鍵字併進既有的內建規則（自建規則完全不動）。
+    // 例：發票印「九五無鉛」而舊規則只有「95無鉛」，靠這次合併補上「無鉛」。
+    for (const s of buildSeedRules()){
+      const cur = rules.find(r => r.id === s.id);
+      if (!cur) { rules.push(s); await idbPut('rules', s); continue; }
+      const merged = Array.from(new Set([...cur.keywords, ...s.keywords]));
+      if (merged.length !== cur.keywords.length){
+        cur.keywords = merged;
+        await idbPut('rules', cur);
+      }
+    }
   }
   if (seeded < SEED_VERSION) localStorage.setItem('ledger-seed', String(SEED_VERSION));
 
@@ -922,6 +961,7 @@ document.getElementById('inv-save').addEventListener('click', async () => {
   }
   document.getElementById('invoice-overlay').classList.remove('show');
   const n = Object.keys(byCat).length;
+  jumpToMonth(d.date);
   invoiceDraft = null;
   toast(`已存入 ${n} 筆記錄`);
 });
@@ -1028,6 +1068,7 @@ function openRecordSheet(rec){
   document.getElementById('record-sheet-title').textContent = rec ? '編輯支出' : '新增支出';
   document.getElementById('r-amount').value = rec ? rec.amount : '';
   document.getElementById('r-date').value = rec ? rec.date : todayStr();
+  syncDateQuick();
   document.getElementById('r-note').value = rec ? (rec.note||'') : '';
   document.getElementById('r-fixed').checked = rec ? !!rec.fixed : false;
   document.getElementById('r-delete').style.display = rec ? 'inline-flex' : 'none';
@@ -1072,6 +1113,7 @@ document.getElementById('r-save').addEventListener('click', async () => {
   };
   await saveRecord(rec);
   closeRecordSheet();
+  jumpToMonth(rec.date);
   toast('已儲存');
 });
 document.getElementById('r-delete').addEventListener('click', async () => {
@@ -1081,6 +1123,24 @@ document.getElementById('r-delete').addEventListener('click', async () => {
   closeRecordSheet();
   toast('已刪除');
 });
+
+/* ---- 日期快捷鍵 ---- */
+function dateBack(n){
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function syncDateQuick(){
+  const cur = document.getElementById('r-date').value;
+  document.querySelectorAll('#date-quick button').forEach(b =>
+    b.classList.toggle('active', dateBack(+b.dataset.back) === cur));
+}
+document.getElementById('date-quick').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.getElementById('r-date').value = dateBack(+b.dataset.back);
+  syncDateQuick();
+});
+document.getElementById('r-date').addEventListener('change', syncDateQuick);
 
 /* ---- 依品項/備註自動套用分類 ---- */
 let catTouched = false;   // 使用者手動點過分類後就不再自動改動
@@ -1288,7 +1348,7 @@ document.getElementById('c-delete').addEventListener('click', async () => {
    ========================================================= */
 function currentFilters(){
   return {
-    month: document.getElementById('f-month').value,
+    month: monthAll ? '' : document.getElementById('f-month').value,
     pay: document.getElementById('f-pay').value,
     cat: document.getElementById('f-cat').value,
     fixed: document.getElementById('f-fixed').value,
@@ -1340,6 +1400,33 @@ function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 document.getElementById('f-month').value = todayStr().slice(0,7);
 ['f-month','f-pay','f-cat','f-fixed'].forEach(id => document.getElementById(id).addEventListener('change', renderList));
 
+/* ---- 月份切換：左右鍵移動、「全部」看所有月份 ---- */
+let monthAll = false;
+function shiftMonth(delta){
+  const el = document.getElementById('f-month');
+  const [y, m] = (el.value || todayStr().slice(0,7)).split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  el.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  setMonthAll(false);
+  renderList();
+}
+function setMonthAll(on){
+  monthAll = on;
+  document.getElementById('m-all').classList.toggle('active', on);
+  document.getElementById('f-month').disabled = on;
+}
+document.getElementById('m-prev').addEventListener('click', () => shiftMonth(-1));
+document.getElementById('m-next').addEventListener('click', () => shiftMonth(1));
+document.getElementById('m-all').addEventListener('click', () => { setMonthAll(!monthAll); renderList(); });
+
+// 掃到舊發票時把明細切到該月份，否則存完會「看不到」剛記的帳
+function jumpToMonth(date){
+  if (!date) return;
+  setMonthAll(false);
+  document.getElementById('f-month').value = date.slice(0,7);
+  renderList();
+}
+
 /* =========================================================
    Stats (統計) rendering
    ========================================================= */
@@ -1356,15 +1443,31 @@ document.querySelectorAll('.period-tabs button').forEach(btn => btn.addEventList
   renderStats();
 }));
 
+function shiftPeriod(delta){
+  if (statsPeriod === 'day'){
+    const d = new Date(statsDate + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    statsDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  } else if (statsPeriod === 'month'){
+    const [y,m] = statsMonth.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    statsMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  } else {
+    statsYear = String(parseInt(statsYear,10) + delta);
+  }
+  renderStats();
+}
+
 function renderPeriodPicker(){
   const wrap = document.getElementById('period-picker-wrap');
-  if (statsPeriod==='day'){
-    wrap.innerHTML = `<input type="date" id="period-input" value="${statsDate}">`;
-  } else if (statsPeriod==='month'){
-    wrap.innerHTML = `<input type="month" id="period-input" value="${statsMonth}">`;
-  } else {
-    wrap.innerHTML = `<input type="number" id="period-input" value="${statsYear}" min="2000" max="2100" style="width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:15px;">`;
-  }
+  const input = statsPeriod === 'day'  ? `<input type="date" id="period-input" value="${statsDate}">`
+              : statsPeriod === 'month'? `<input type="month" id="period-input" value="${statsMonth}">`
+              : `<input type="number" id="period-input" value="${statsYear}" min="2000" max="2100">`;
+  wrap.innerHTML =
+    `<button id="p-prev"><i class="ti ti-chevron-left"></i></button>${input}<button id="p-next"><i class="ti ti-chevron-right"></i></button>`;
+
+  document.getElementById('p-prev').addEventListener('click', () => shiftPeriod(-1));
+  document.getElementById('p-next').addEventListener('click', () => shiftPeriod(1));
   document.getElementById('period-input').addEventListener('change', (e) => {
     if (statsPeriod==='day') statsDate = e.target.value;
     else if (statsPeriod==='month') statsMonth = e.target.value;
