@@ -174,7 +174,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .scan-mask{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
 .scan-frame{width:74vw;max-width:330px;aspect-ratio:1;border:3px solid #fff;border-radius:18px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55);}
 .scan-hint{position:absolute;left:0;right:0;bottom:118px;text-align:center;color:#fff;font-size:14px;padding:0 24px;line-height:1.6;text-shadow:0 1px 4px rgba(0,0,0,.9);}
-.scan-cancel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(44px + env(safe-area-inset-bottom));background:rgba(255,255,255,.95);color:#111;border:none;padding:12px 30px;border-radius:26px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.scan-actions{position:absolute;left:0;right:0;bottom:calc(40px + env(safe-area-inset-bottom));display:flex;justify-content:center;gap:12px;}
+.scan-btn{background:rgba(255,255,255,.95);color:#111;border:none;padding:12px 26px;border-radius:26px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.scan-btn.ghost{background:rgba(255,255,255,.22);color:#fff;border:1.5px solid rgba(255,255,255,.75);}
 </style>
 </head>
 <body>
@@ -362,7 +364,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <video id="scan-video" playsinline muted></video>
   <div class="scan-mask"><div class="scan-frame"></div></div>
   <div class="scan-hint" id="scan-hint">將發票<b>左側</b>的 QR code 對準框內</div>
-  <button class="scan-cancel" id="scan-cancel"><i class="ti ti-x"></i> 取消</button>
+  <div class="scan-actions">
+    <button class="scan-btn ghost" id="scan-photo-btn"><i class="ti ti-photo"></i> 用照片</button>
+    <button class="scan-btn" id="scan-cancel"><i class="ti ti-x"></i> 取消</button>
+  </div>
+  <input type="file" id="scan-photo-input" accept="image/*" style="display:none;">
 </div>
 
 <div class="toast" id="toast"></div>
@@ -404,7 +410,7 @@ const DEFAULT_RULES = [
   ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
 ];
 
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -667,39 +673,132 @@ async function startScanner(){
     return;
   }
   try{
-    scanStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} } });
+    // 發票上兩個 QR 並排，各自佔的畫面很小，需要盡量高的來源解析度
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} }
+    });
   }catch(e){
-    stopScanner();
-    toast(e.name==='NotAllowedError' ? '請允許使用相機權限' : '無法開啟相機');
+    // 相機開不了時不要關掉畫面，留著讓使用者改用「用照片」
+    hint.innerHTML = (e.name==='NotAllowedError'
+        ? '沒有相機權限' : '無法開啟相機')
+      + '<br><span style="font-size:12px;opacity:.85">可以改按下方「用照片」選一張發票照片</span>';
     return;
   }
   video.srcObject = scanStream;
   await video.play().catch(()=>{});
-  hint.innerHTML = '將發票<b>左側</b>的 QR code 對準框內';
+  try{   // 盡量讓鏡頭持續對焦，發票文字小、離太近容易糊掉
+    const track = scanStream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.focusMode && caps.focusMode.includes('continuous')){
+      await track.applyConstraints({ advanced:[{ focusMode:'continuous' }] });
+    }
+  }catch(e){ /* 不支援就算了 */ }
+
+  const DEFAULT_HINT = '將發票<b>左側</b>的 QR code 對準框內<br><span style="font-size:12px;opacity:.85">靠近一點，讓 QR 填滿約半個框</span>';
+  hint.innerHTML = DEFAULT_HINT;
+  let hintUntil = 0;
+  const say = (html, ms) => { hint.innerHTML = html; hintUntil = Date.now() + ms; };
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently:true });
+  let frame = 0;
+
+  // 在 canvas 指定區域上解碼；sw/sh 為來源裁切範圍，out 為輸出邊長
+  const decodeRegion = (sx, sy, sw, sh, out, invert) => {
+    canvas.width = out; canvas.height = Math.round(out * sh / sw);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return window.jsQR(img.data, img.width, img.height,
+      { inversionAttempts: invert ? 'attemptBoth' : 'dontInvert' });
+  };
 
   const tick = () => {
     if (!scanStream) return;
     if (video.readyState === video.HAVE_ENOUGH_DATA){
-      // 取樣上限 640px，避免高解析度影格拖慢逐格解碼
-      const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
+      const vw = video.videoWidth, vh = video.videoHeight;
+      frame++;
+      // 交錯三種取樣：整張(高解析) → 中央放大 → 整張含反相，兼顧速度與命中率
+      let code = null;
+      const mode = frame % 3;
+      if (mode === 0){
+        code = decodeRegion(0, 0, vw, vh, Math.min(1280, vw), false);
+      } else if (mode === 1){
+        const s = Math.round(Math.min(vw, vh) * 0.8);
+        code = decodeRegion((vw-s)/2, (vh-s)/2, s, s, Math.min(1000, s), false);
+      } else {
+        code = decodeRegion(0, 0, vw, vh, Math.min(960, vw), true);
+      }
+
       if (code && code.binaryData && code.binaryData.length){
         const parsed = parseInvoiceQR(Uint8Array.from(code.binaryData));
-        if (parsed){ onScanned(parsed); return; }
-        hint.textContent = '這不是電子發票的 QR code，請對準發票左下角';
+        if (parsed && !parsed.continuation){ onScanned(parsed); return; }
+        if (parsed && parsed.continuation){
+          if (invoiceDraft){ onScanned(parsed); return; }
+          say('掃到的是<b>右邊</b>那個 QR code<br><span style="font-size:12px;opacity:.85">請先對準<b>左邊</b>那個</span>', 1600);
+        } else {
+          say('這不是電子發票的 QR code', 1400);
+        }
+      } else if (Date.now() > hintUntil && hint.innerHTML !== DEFAULT_HINT){
+        hint.innerHTML = DEFAULT_HINT;
       }
     }
     scanRAF = requestAnimationFrame(tick);
   };
   scanRAF = requestAnimationFrame(tick);
 }
+
+/* 從照片解碼：靜態照片解析度遠高於即時影像，
+   相機掃不到時（發票有皺褶、反光、油漬）這條路通常還能成功。 */
+async function scanFromImageFile(file){
+  const hint = document.getElementById('scan-hint');
+  document.getElementById('scanner').classList.add('show');
+  hint.textContent = '解析照片中...';
+  try{
+    if (!window.jsQR) await loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+  }catch(e){ hint.textContent = '掃描器載入失敗，請確認網路連線'; return; }
+
+  const img = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = e => { const im = new Image(); im.onload = ()=>res(im); im.onerror = rej; im.src = e.target.result; };
+    r.onerror = rej; r.readAsDataURL(file);
+  });
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently:true });
+  const tryRegion = (sx, sy, sw, sh, out) => {
+    canvas.width = Math.round(out); canvas.height = Math.round(out * sh / sw);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return window.jsQR(d.data, d.width, d.height, { inversionAttempts:'attemptBoth' });
+  };
+
+  const W = img.naturalWidth, H = img.naturalHeight;
+  // 整張多種縮放 →左右半邊→四等分，逐步放大搜尋
+  const regions = [
+    [0,0,W,H,Math.min(1600,W)], [0,0,W,H,Math.min(1000,W)], [0,0,W,H,Math.min(2200,W)],
+    [0,0,W/2,H,Math.min(1400,W/2)], [W/2,0,W/2,H,Math.min(1400,W/2)],
+    [0,0,W/2,H/2,900], [W/2,0,W/2,H/2,900], [0,H/2,W/2,H/2,900], [W/2,H/2,W/2,H/2,900],
+  ];
+  for (const [sx,sy,sw,sh,out] of regions){
+    let code = null;
+    try { code = tryRegion(sx,sy,sw,sh,out); } catch(e){}
+    if (code && code.binaryData && code.binaryData.length){
+      const parsed = parseInvoiceQR(Uint8Array.from(code.binaryData));
+      if (parsed && !parsed.continuation){ onScanned(parsed); return; }
+      if (parsed && parsed.continuation && invoiceDraft){ onScanned(parsed); return; }
+    }
+    await new Promise(r=>setTimeout(r,0));   // 讓出執行緒，避免畫面凍住
+  }
+  hint.innerHTML = '這張照片讀不到發票 QR code<br><span style="font-size:12px;opacity:.85">請拍近一點、讓左邊那個 QR 清楚且填滿畫面</span>';
+}
+
+document.getElementById('scan-photo-btn').addEventListener('click', () => document.getElementById('scan-photo-input').click());
+document.getElementById('scan-photo-input').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (scanStream){ if (scanRAF) cancelAnimationFrame(scanRAF); scanRAF=null; scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  await scanFromImageFile(f);
+});
 
 function stopScanner(){
   if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = null; }
@@ -741,12 +840,14 @@ let invoiceDraft = null;
 // 用「差額」補一列，確保存進帳本的總額永遠等於發票總計額。
 function reconcileDraft(){
   const d = invoiceDraft; if (!d) return;
-  d.items = d.items.filter(i => i.name !== '其他（未列明細）');
+  d.items = d.items.filter(i => !i.isDiff);
   const sum = d.items.reduce((s,i)=>s+i.amount, 0);
   const diff = Math.round((d.total - sum) * 100) / 100;
   if (d.total > 0 && Math.abs(diff) >= 1){
-    d.items.push({ name:'其他（未列明細）', qty:1, price:diff, amount:diff,
-                   category: classifyItem('其他') || 'other', on:true, isDiff:true });
+    // 差額為負代表店家有折扣（品項單價加總大於實付總額），照樣補一列讓總額對得起來
+    d.items.push({ name: diff > 0 ? '其他（未列明細）' : '折扣／優惠',
+                   qty:1, price:diff, amount:diff,
+                   category:'other', on:true, isDiff:true });
   }
 }
 
