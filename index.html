@@ -132,6 +132,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat-manage-row .fixed-badge{font-size:10px;color:var(--orange);background:var(--orange-bg);padding:2px 6px;border-radius:5px;}
 .icon-btn{background:none;border:none;color:var(--sub2);font-size:17px;cursor:pointer;padding:6px;}
 .help{font-size:12px;color:var(--sub2);line-height:1.6;margin-top:10px;}
+.csv-prev{border:1px solid var(--border);border-radius:11px;padding:9px 11px;margin-bottom:8px;background:var(--card);}
+.csv-prev-h{font-size:12px;color:var(--sub);margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed var(--border);}
+.csv-prev-h b{color:var(--text);font-size:13.5px;}
+.csv-prev-i{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0;}
+.csv-prev-i span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ei-status{font-size:12.5px;line-height:1.7;margin-top:10px;padding:10px 12px;border-radius:9px;background:var(--bg);display:none;}
+.ei-status.show{display:block;}
+.ei-status.err{background:var(--red-bg);color:var(--red);}
+.ei-status.ok{background:var(--green-bg);color:var(--green);}
+.ei-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:8px;}
+.ei-bar i{display:block;height:100%;background:var(--blue);width:0;transition:width .2s;}
 .ver-line{display:flex;align-items:center;justify-content:center;gap:14px;font-size:11.5px;color:var(--sub2);padding:16px 0 6px;}
 .btn-link{background:none;border:none;color:var(--blue);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0;}
 .help a{color:var(--blue);}
@@ -244,6 +255,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="card">
       <div id="cat-manage-list"></div>
       <button class="btn btn-ghost btn-block" id="add-cat-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增分類</button>
+    </div>
+
+    <div class="section-title">匯入載具發票</div>
+    <div class="card">
+      <p class="help" style="margin-top:0;">到財政部平台或發票 App 匯出載具發票 CSV，選檔後會自動辨識欄位、套用分類規則、依分類拆帳。匯入前會先讓你確認。</p>
+      <button class="btn btn-primary btn-block" id="csv-pick"><i class="ti ti-file-import"></i> 選擇發票 CSV</button>
+      <input type="file" id="csv-input" accept=".csv,.txt,text/csv,text/plain" style="display:none;">
+      <div id="csv-status" class="ei-status"></div>
     </div>
 
     <div class="section-title">自動分類規則</div>
@@ -381,6 +400,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<!-- CSV import preview -->
+<div class="overlay" id="csv-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>匯入預覽</h2><button id="csv-close">&times;</button></div>
+    <div id="csv-meta" class="inv-meta"></div>
+    <div id="csv-warn"></div>
+    <div id="csv-cols" class="help"></div>
+    <div class="field" style="margin-top:14px;"><label>這批發票的付款方式</label>
+      <div class="seg" id="csv-pay-seg">
+        <button data-pay="cash">💵 現金</button>
+        <button data-pay="credit" class="active">💳 信用卡</button>
+      </div>
+    </div>
+    <label style="display:block;font-size:12.5px;color:var(--sub);margin:14px 0 6px;font-weight:500;">前幾筆內容（請核對是否正確）</label>
+    <div id="csv-items"></div>
+    <div id="csv-summary" class="inv-summary"></div>
+    <div class="form-actions">
+      <button class="btn btn-primary btn-block" id="csv-save">確認匯入</button>
+    </div>
+  </div>
+</div>
+
 <!-- QR scanner -->
 <div class="scanner" id="scanner">
   <video id="scan-video" playsinline muted></video>
@@ -433,7 +475,7 @@ const DEFAULT_RULES = [
   ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
 ];
 
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.6';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -1565,6 +1607,367 @@ function renderTrendChart(periodList){
 }
 
 /* =========================================================
+   發票 CSV 匯入
+   各平台匯出的欄位順序不一致，因此不寫死欄位位置，改用「偵測 + 自我驗證」：
+   金額欄的判定標準是「主檔金額能否對上明細列的加總」，命中率最高者才採用，
+   並在匯入前把偵測結果與前幾筆資料攤開讓使用者確認。
+   ========================================================= */
+const INV_NO_RE = /^[A-Z]{2}\d{8}$/;
+
+async function readCsvText(file){
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes[0]===0xEF && bytes[1]===0xBB && bytes[2]===0xBF)
+    return new TextDecoder('utf-8').decode(bytes.slice(3));
+  const utf8 = new TextDecoder('utf-8').decode(bytes);
+  // 出現替代字元代表不是合法 UTF-8，台灣的匯出檔多為 Big5
+  if ((utf8.match(/�/g) || []).length > 2)
+    return new TextDecoder('big5').decode(bytes);
+  return utf8;
+}
+
+function splitCsvLine(line, delim){
+  const out = []; let cur = '', q = false;
+  for (let i=0;i<line.length;i++){
+    const ch = line[i];
+    if (q){
+      if (ch === '"' && line[i+1] === '"'){ cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim){ out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+function csvDate(c){
+  if (!c) return null;
+  const s = String(c).trim();
+  if (/^\d{8}$/.test(s)){
+    const y = +s.slice(0,4);
+    if (y >= 1990 && y <= 2100) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    return null;
+  }
+  let m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  // 民國年：1150803 或 115/08/03
+  m = s.match(/^(\d{3})[\/\-.]?(\d{2})[\/\-.]?(\d{2})$/);
+  if (m) return `${+m[1]+1911}-${m[2]}-${m[3]}`;
+  return null;
+}
+const csvNum = c => {
+  const s = String(c ?? '').replace(/[,$＄\s]/g,'');
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+  return parseFloat(s);
+};
+
+function parseInvoiceCsv(text){
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) throw new Error('檔案是空的');
+
+  // 分隔符號：取前 20 行出現次數最多者
+  const sample = lines.slice(0,20).join('\n');
+  const delim = ['|','\t',','].map(d => [d, (sample.split(d).length-1)])
+                              .sort((a,b)=>b[1]-a[1])[0][0];
+  const rows = lines.map(l => splitCsvLine(l, delim));
+
+  const isM = r => r[0]==='M' || r[0]==='m';
+  const isD = r => r[0]==='D' || r[0]==='d';
+  if (rows.some(isM) && rows.some(isD)) return parseMD(rows, delim);
+  return parseFlat(rows, delim);
+}
+
+/* 財政部/發票 App 常見的 M(主檔)+D(明細) 格式 */
+function parseMD(rows, delim){
+  const mRows = rows.filter(r => r[0]==='M' || r[0]==='m');
+  const dRows = rows.filter(r => r[0]==='D' || r[0]==='d');
+
+  const invColM = pickCol(mRows, c => INV_NO_RE.test(c));
+  const invColD = pickCol(dRows, c => INV_NO_RE.test(c));
+  const dateCol = pickCol(mRows, c => !!csvDate(c));
+  if (invColM < 0 || dateCol < 0) throw new Error('找不到發票號碼或日期欄位');
+
+  // 明細金額欄：數字且不是發票號碼；取「非整份都相同」的數值欄
+  const dAmtCol = pickNumericCol(dRows, [invColD]);
+  // 品名欄：非數字、非發票號碼、長度最長的文字欄
+  const dNameCol = pickTextCol(dRows, [invColD, dAmtCol]);
+
+  // 主檔金額欄：用「能否對上該張發票明細加總」來挑，命中率最高者勝出
+  const sumByInv = {};
+  if (dAmtCol >= 0 && invColD >= 0){
+    for (const r of dRows){
+      const inv = r[invColD], v = csvNum(r[dAmtCol]);
+      if (inv && v != null) sumByInv[inv] = (sumByInv[inv] || 0) + v;
+    }
+  }
+  const mAmtCol = pickAmountColByReconcile(mRows, invColM, sumByInv, [invColM, dateCol]);
+
+  const invoices = [];
+  for (const r of mRows){
+    const invNum = r[invColM];
+    const date = csvDate(r[dateCol]);
+    if (!invNum || !date) continue;
+    const total = mAmtCol >= 0 ? (csvNum(r[mAmtCol]) ?? 0) : (sumByInv[invNum] || 0);
+    const seller = pickSeller(r, [invColM, dateCol, mAmtCol]);
+    const items = dRows.filter(d => d[invColD] === invNum).map(d => ({
+      name: (dNameCol >= 0 ? d[dNameCol] : '') || '未列品名',
+      qty: 1,
+      amount: dAmtCol >= 0 ? (csvNum(d[dAmtCol]) ?? 0) : 0,
+    })).filter(x => x.amount || x.name !== '未列品名');
+    invoices.push({ invNum, date, total, seller, items });
+  }
+  return { format:'M/D（主檔＋明細）', delim, invoices,
+           cols:{ 發票號碼:invColM, 日期:dateCol, 主檔金額:mAmtCol, 品名:dNameCol, 明細金額:dAmtCol },
+           reconciled: reconcileRate(invoices) };
+}
+
+/* 單層表格：一列一筆（可能有表頭） */
+function parseFlat(rows, delim){
+  let header = null, body = rows;
+  const HEAD_KW = ['日期','發票','金額','品名','店家','商店','名稱','時間'];
+  if (rows.length > 1 && HEAD_KW.some(k => rows[0].some(c => c.includes(k))) &&
+      !rows[0].some(c => csvDate(c))){
+    header = rows[0]; body = rows.slice(1);
+  }
+  // 依關鍵字「優先順序」逐一比對，避免「店家」搶在「品名」前面被選中
+  const findByHead = (kws) => {
+    if (!header) return -1;
+    for (const k of kws){
+      const i = header.findIndex(h => h.includes(k));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+
+  let dateCol = findByHead(['日期','時間']);
+  if (dateCol < 0) dateCol = pickCol(body, c => !!csvDate(c));
+  let invCol = findByHead(['發票號碼','發票']);
+  if (invCol < 0) invCol = pickCol(body, c => INV_NO_RE.test(c));
+  let amtCol = findByHead(['小計','金額','總計','價']);
+  if (amtCol < 0) amtCol = pickNumericCol(body, [invCol, dateCol]);
+  const sellerCol = findByHead(['店家','商店','店名','賣方','營業人']);
+  let nameCol = findByHead(['品名','品項','名稱']);
+  if (nameCol < 0) nameCol = pickTextCol(body, [invCol, amtCol, dateCol, sellerCol]);
+  if (dateCol < 0 || amtCol < 0) throw new Error('找不到日期或金額欄位，請確認檔案格式');
+
+  // 同一張發票號碼的列歸為一張；沒有發票號碼就以「日期+列號」各自獨立
+  const map = new Map();
+  body.forEach((r, i) => {
+    const date = csvDate(r[dateCol]);
+    const amount = csvNum(r[amtCol]);
+    if (!date || amount == null) return;
+    const key = (invCol >= 0 && r[invCol]) ? r[invCol] : `${date}#${i}`;
+    const seller = sellerCol >= 0 ? (r[sellerCol]||'') : pickSeller(r, [invCol, amtCol, dateCol, nameCol]);
+    if (!map.has(key)) map.set(key, { invNum: (invCol>=0 ? r[invCol] : '') || '', date, total:0, seller, items:[] });
+    const inv = map.get(key);
+    const nm = (nameCol>=0 ? r[nameCol] : '') || seller || '未列品名';
+    inv.items.push({ name: nm, qty:1, amount });
+    inv.total += amount;
+  });
+  const invoices = [...map.values()];
+  return { format: header ? '單層表格（含表頭）' : '單層表格', delim, invoices,
+           cols:{ 發票號碼:invCol, 日期:dateCol, 金額:amtCol, 品名:nameCol, 店家:sellerCol },
+           reconciled: 1 };
+}
+
+/* 店家名稱：該列最長的一段文字，且不是數字/發票號碼/日期/載具欄位 */
+function pickSeller(row, exclude){
+  let best = '';
+  row.forEach((v, i) => {
+    if (i === 0 || exclude.includes(i)) return;
+    const s = (v || '').trim();
+    if (!s || csvNum(s) != null || INV_NO_RE.test(s) || csvDate(s)) return;
+    if (/^(手機條碼|載具|3J0002|\/[A-Z0-9+.\-]{6,8})$/i.test(s)) return;
+    if (s.length > best.length) best = s;
+  });
+  return best;
+}
+
+function pickCol(rows, test){
+  const n = Math.max(...rows.map(r=>r.length), 0);
+  let best = -1, bestHit = 0;
+  for (let c=0;c<n;c++){
+    const hit = rows.reduce((s,r)=> s + (r[c] && test(r[c]) ? 1 : 0), 0);
+    if (hit > bestHit){ bestHit = hit; best = c; }
+  }
+  return bestHit >= Math.max(1, rows.length*0.5) ? best : -1;
+}
+function pickNumericCol(rows, exclude){
+  const n = Math.max(...rows.map(r=>r.length), 0);
+  let best = -1, bestScore = 0;
+  for (let c=0;c<n;c++){
+    if (exclude.includes(c)) continue;
+    let hit = 0, distinct = new Set();
+    for (const r of rows){
+      const v = csvNum(r[c]);
+      // 排除看起來像統編/日期的 8 位數
+      if (v != null && !/^\d{8}$/.test(String(r[c]).trim())){ hit++; distinct.add(v); }
+    }
+    const score = hit * (distinct.size > 1 ? 1 : 0.2);
+    if (score > bestScore){ bestScore = score; best = c; }
+  }
+  return best;
+}
+function pickTextCol(rows, exclude){
+  const n = Math.max(...rows.map(r=>r.length), 0);
+  let best = -1, bestLen = 0;
+  for (let c=0;c<n;c++){
+    if (exclude.includes(c)) continue;
+    let len = 0, hit = 0;
+    for (const r of rows){
+      const v = (r[c]||'').trim();
+      if (v && csvNum(v) == null && !INV_NO_RE.test(v)){ len += v.length; hit++; }
+    }
+    if (hit >= rows.length*0.4 && len > bestLen){ bestLen = len; best = c; }
+  }
+  return best;
+}
+function pickAmountColByReconcile(mRows, invCol, sumByInv, exclude){
+  const n = Math.max(...mRows.map(r=>r.length), 0);
+  const keys = Object.keys(sumByInv);
+  if (!keys.length) return pickNumericCol(mRows, exclude);
+  let best = -1, bestHit = 0;
+  for (let c=0;c<n;c++){
+    if (exclude.includes(c)) continue;
+    let hit = 0;
+    for (const r of mRows){
+      const v = csvNum(r[c]), s = sumByInv[r[invCol]];
+      if (v != null && s != null && Math.abs(v - s) < 1) hit++;
+    }
+    if (hit > bestHit){ bestHit = hit; best = c; }
+  }
+  return bestHit > 0 ? best : pickNumericCol(mRows, exclude);
+}
+function reconcileRate(invoices){
+  const withItems = invoices.filter(i => i.items.length);
+  if (!withItems.length) return 0;
+  const ok = withItems.filter(i =>
+    Math.abs(i.total - i.items.reduce((s,x)=>s+x.amount,0)) < 1).length;
+  return ok / withItems.length;
+}
+
+/* ---- 匯入預覽 ---- */
+let csvDraft = null;
+
+document.getElementById('csv-pick').addEventListener('click', () => document.getElementById('csv-input').click());
+document.getElementById('csv-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  const st = document.getElementById('csv-status');
+  st.className = 'ei-status show'; st.textContent = '解析中...';
+  try{
+    const text = await readCsvText(file);
+    const parsed = parseInvoiceCsv(text);
+    if (!parsed.invoices.length) throw new Error('沒有解析出任何發票資料');
+    csvDraft = parsed;
+    st.className = 'ei-status show'; st.textContent = '';
+    renderCsvSheet(file.name);
+    document.getElementById('csv-overlay').classList.add('show');
+  }catch(err){
+    st.className = 'ei-status show err';
+    st.innerHTML = '❌ ' + err.message + '<br><span style="font-size:11.5px">把檔案傳給我，我可以針對這個格式加上支援。</span>';
+  }
+});
+
+function renderCsvSheet(fileName){
+  const d = csvDraft; if (!d) return;
+  const existing = new Set(records.map(r=>r.invNum).filter(Boolean));
+  d.fresh = d.invoices.filter(i => !i.invNum || !existing.has(i.invNum));
+  const dup = d.invoices.length - d.fresh.length;
+
+  // 先把每張發票的品項分類算好，讓預覽與實際匯入結果一致
+  for (const inv of d.fresh){
+    const sum = inv.items.reduce((s,x)=>s+x.amount,0);
+    if (!inv.items.length) inv.items = [{ name: inv.seller || '未列明細', qty:1, amount: inv.total }];
+    else if (inv.total && Math.abs(inv.total - sum) >= 1)
+      inv.items.push({ name: inv.total>sum ? '其他（未列明細）':'折扣／優惠', qty:1,
+                       amount: Math.round((inv.total-sum)*100)/100 });
+    for (const it of inv.items) it.category = classifyItem(it.name) || classifyItem(inv.seller) || 'other';
+  }
+
+  const byCat = {};
+  let recCount = 0, total = 0;
+  for (const inv of d.fresh){
+    const g = {};
+    for (const it of inv.items){ if (it.amount) (g[it.category] ||= []).push(it); }
+    recCount += Object.keys(g).length;
+    for (const [c, its] of Object.entries(g)){
+      const a = its.reduce((s,x)=>s+x.amount,0);
+      byCat[c] = (byCat[c]||0) + a; total += a;
+    }
+  }
+  d.summary = { recCount, total, dup };
+
+  document.getElementById('csv-meta').innerHTML =
+    `<b>${escapeHtml(fileName)}</b><br>格式：${d.format}　分隔：${d.delim === '\t' ? 'Tab' : d.delim}<br>` +
+    `發票 <b>${d.invoices.length}</b> 張` + (dup ? `（其中 ${dup} 張已匯入過，將略過）` : '') +
+    `　將新增 <b>${recCount}</b> 筆、合計 <b>${fmt(total)}</b>`;
+
+  const rate = Math.round(d.reconciled*100);
+  document.getElementById('csv-warn').innerHTML = d.reconciled >= 0.9 ? '' :
+    `<div class="inv-warn"><i class="ti ti-alert-triangle"></i><div>只有 ${rate}% 的發票「總金額 = 品項加總」，欄位判斷可能有誤。<b>請務必核對下方前幾筆是否正確</b>，不對就取消，把檔案給我調整。</div></div>`;
+
+  document.getElementById('csv-cols').innerHTML = '偵測到的欄位：' +
+    Object.entries(d.cols).filter(([,v])=>v>=0).map(([k,v])=>`${k}=第${v+1}欄`).join('　');
+
+  const cats = categories.map(c=>c.id);
+  document.getElementById('csv-items').innerHTML = d.fresh.slice(0,6).map(inv => `
+    <div class="csv-prev">
+      <div class="csv-prev-h">${inv.date}　${escapeHtml(inv.seller||inv.invNum||'')}　<b>${fmt(inv.total)}</b></div>
+      ${inv.items.map(it=>{ const c=catById(it.category)||{icon:'❓',name:'?'};
+        return `<div class="csv-prev-i"><span>${c.icon} ${escapeHtml(it.name)}</span><span>${fmt(it.amount)}</span></div>`;
+      }).join('')}
+    </div>`).join('') + (d.fresh.length>6 ? `<div class="help" style="text-align:center">…另外還有 ${d.fresh.length-6} 張</div>` : '');
+
+  document.getElementById('csv-summary').innerHTML =
+    Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,a])=>{
+      const cc = catById(c); return `${cc?cc.icon+' '+cc.name:'?'} ${fmt(a)}`;
+    }).join('　') || '（沒有可匯入的資料）';
+}
+
+document.getElementById('csv-close').addEventListener('click', () => {
+  document.getElementById('csv-overlay').classList.remove('show'); csvDraft = null;
+});
+document.getElementById('csv-overlay').addEventListener('click', (e) => {
+  if (e.target.id==='csv-overlay'){ e.currentTarget.classList.remove('show'); csvDraft = null; }
+});
+
+document.getElementById('csv-save').addEventListener('click', async () => {
+  const d = csvDraft; if (!d || !d.fresh.length) return;
+  const pay = document.querySelector('#csv-pay-seg button.active').dataset.pay;
+  let saved = 0;
+  for (const inv of d.fresh){
+    const g = {};
+    for (const it of inv.items){ if (it.amount) (g[it.category] ||= []).push(it); }
+    const stamp = Date.now();
+    for (const [catId, its] of Object.entries(g)){
+      const cat = catById(catId);
+      await saveRecord({
+        id: uid(), date: inv.date,
+        amount: its.reduce((s,x)=>s+x.amount,0),
+        category: catId, payment: pay, fixed: cat ? !!cat.fixed : false,
+        note: (inv.seller ? inv.seller + '：' : '') + its.map(x=>x.name).join('、'),
+        photo:null, invNum: inv.invNum || null, createdAt: stamp,
+      });
+      saved++;
+    }
+  }
+  document.getElementById('csv-overlay').classList.remove('show');
+  const st = document.getElementById('csv-status');
+  st.className = 'ei-status show ok';
+  st.innerHTML = `✅ 已匯入 ${d.fresh.length} 張發票、${saved} 筆記錄`;
+  csvDraft = null;
+  setMonthAll(true); renderList();
+  toast(`已匯入 ${saved} 筆記錄`);
+});
+
+document.getElementById('csv-pay-seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#csv-pay-seg button').forEach(x=>x.classList.toggle('active', x===b));
+});
+
+/* =========================================================
    Settings: backup export/import
    ========================================================= */
 function renderBackupStat(){
@@ -1642,7 +2045,9 @@ loadLocal();
 
 // 本機開發用的檢測掛勾，正式網址不會掛上去
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1'){
-  window.__ledger = { parseInvoiceQR, classifyItem, onScanned, parseAmountFromText, get draft(){ return invoiceDraft; } };
+  window.__ledger = { parseInvoiceQR, classifyItem, onScanned, parseAmountFromText,
+                      parseInvoiceCsv, readCsvText, get draft(){ return invoiceDraft; },
+                      get csvDraft(){ return csvDraft; } };
 }
 
 /* Service Worker：註冊後主動檢查更新。新版接手控制權時自動重新載入一次，
