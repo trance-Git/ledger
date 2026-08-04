@@ -133,10 +133,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .icon-btn{background:none;border:none;color:var(--sub2);font-size:17px;cursor:pointer;padding:6px;}
 .help{font-size:12px;color:var(--sub2);line-height:1.6;margin-top:10px;}
 .csv-prev{border:1px solid var(--border);border-radius:11px;padding:9px 11px;margin-bottom:8px;background:var(--card);}
-.csv-prev-h{font-size:12px;color:var(--sub);margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed var(--border);}
+.csv-prev-h{font-size:12px;color:var(--sub);margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.csv-prev-h > span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .csv-prev-h b{color:var(--text);font-size:13.5px;}
-.csv-prev-i{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0;}
-.csv-prev-i span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.csv-pay{flex-shrink:0;font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);background:var(--bg);cursor:pointer;user-select:none;}
+.csv-prev-i{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;}
+.csv-prev-i > span:first-child{overflow:hidden;min-width:0;}
+.csv-prev-i .qty{display:block;font-size:11px;color:var(--sub2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.csv-paybar{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--sub);padding:8px 10px;margin-bottom:8px;background:var(--bg);border-radius:9px;}
+.csv-paybar b{color:var(--text);}
 .ei-status{font-size:12.5px;line-height:1.7;margin-top:10px;padding:10px 12px;border-radius:9px;background:var(--bg);display:none;}
 .ei-status.show{display:block;}
 .ei-status.err{background:var(--red-bg);color:var(--red);}
@@ -371,8 +376,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="rule-sheet-title">新增規則</h2><button id="rule-close">&times;</button></div>
     <div class="field"><label>符合時歸到哪個分類</label><select id="ru-cat"></select></div>
-    <div class="field"><label>關鍵字（用逗號分隔，品名含其中任一即命中）</label>
-      <textarea id="ru-kw" placeholder="高麗菜,青菜,水果" style="min-height:100px;"></textarea></div>
+    <div class="field"><label>品名關鍵字（逗號分隔，含其中任一即命中）</label>
+      <textarea id="ru-kw" placeholder="高麗菜,青菜,水果" style="min-height:80px;"></textarea></div>
+    <div class="field"><label>店家關鍵字（可留空）</label>
+      <textarea id="ru-seller" placeholder="全聯,家樂福" style="min-height:60px;"></textarea>
+      <div class="help" style="margin-top:6px;">只填店家 → 該店家所有品項都歸這類；兩者都填 → 須同時符合。</div></div>
     <div class="form-actions">
       <button class="btn btn-danger" id="ru-delete" style="display:none;"><i class="ti ti-trash"></i></button>
       <button class="btn btn-primary btn-block" id="ru-save">儲存</button>
@@ -410,13 +418,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="csv-meta" class="inv-meta"></div>
     <div id="csv-warn"></div>
     <div id="csv-cols" class="help"></div>
-    <div class="field" style="margin-top:14px;"><label>這批發票的付款方式</label>
-      <div class="seg" id="csv-pay-seg">
-        <button data-pay="cash">💵 現金</button>
-        <button data-pay="credit" class="active">💳 信用卡</button>
-      </div>
-    </div>
-    <label style="display:block;font-size:12.5px;color:var(--sub);margin:14px 0 6px;font-weight:500;">前幾筆內容（請核對是否正確）</label>
+    <label style="display:block;font-size:12.5px;color:var(--sub);margin:14px 0 6px;font-weight:500;">逐張確認（點右側可切換付款方式）</label>
+    <div id="csv-paybar" class="csv-paybar"></div>
     <div id="csv-items"></div>
     <div id="csv-summary" class="inv-summary"></div>
     <div class="form-actions">
@@ -461,23 +464,36 @@ const DEFAULT_CATEGORIES = [
   {id:'other', name:'其他', icon:'💰', fixed:false, order:14},
 ];
 
-// 關鍵字 → 分類。品名只要「包含」關鍵字即命中，order 小的先比對。
+/* 規則格式：[分類, 品名關鍵字, 店家關鍵字]
+   兩種關鍵字都填時須同時命中；只填店家則該店家的所有品項都適用。
+   順序很重要：先判斷不受店家影響的品項，再用店家決定「食材 vs 即食品」，
+   因為超商即食品的名稱本來就含食材名（蒜香…雞Ｑ丸），單看品名必然誤判。 */
 const DEFAULT_RULES = [
-  ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,蔬菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,番茄,蕃茄,小黃瓜,茄子,南瓜,玉米,青椒,彩椒,菇,金針,豆芽,蔥,薑,蒜,香菜,九層塔,水果,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,梨,棗,柚,檸檬,酪梨,雞蛋,雞胸,雞腿,豬肉,牛肉,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蝦,蛤蜊,魚,豆腐,豆干,生鮮,牛奶,鮮奶,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,鹽,砂糖,白糖,黑糖,冰糖,醬油,醋,味精,胡椒,調味'],
-  ['daily', '衛生紙,面紙,抽取式,捲筒,濕紙巾,洗髮,潤髮,沐浴,肥皂,香皂,牙膏,牙刷,牙線,漱口,洗面乳,洗衣精,洗衣粉,柔軟精,漂白,洗碗精,清潔劑,菜瓜布,垃圾袋,保鮮膜,夾鏈袋,鋁箔,紙巾,棉花棒,刮鬍,衛生棉,尿布,濕巾,除濕,樟腦,芳香,殺蟲,蚊香,電池,燈泡,口罩,酒精,乾洗手,拖把,掃把,抹布,手套,日用'],
-  // 發票上油品常印國字（九五無鉛），故「無鉛」單獨列一條涵蓋所有寫法
-  ['fuel', '無鉛,汽油,柴油,加油,中油,台塑石油,台亞,山隆,全國加油站,機油,gas,fuel'],
-  ['food', '便當,飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,茶葉,麵包,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,超商,7-11,全家,萊爾富,OK超商,星巴克,麥當勞,肯德基,摩斯,漢堡,披薩,壽司,拉麵,火鍋,滷味,鹹酥雞,便利商店'],
-  ['transport', '停車,停車費,計程車,uber,捷運,悠遊卡,一卡通,高鐵,台鐵,客運,公車,機票,ETC,過路費,國道,輪胎,保養,維修,洗車'],
-  ['medical', '藥,診所,醫院,掛號,牙醫,眼科,健保,口罩,維他命,維生素,保健,葉黃素,益生菌,OK繃,藥局,藥妝'],
-  ['daily', '屈臣氏,康是美,寶雅'],
-  ['shopping', '衣,褲,裙,鞋,襪,包,帽,外套,配件,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,鍋,碗,盤,杯,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕'],
-  ['entertainment', '電影,影城,威秀,國賓,KTV,遊戲,steam,switch,ps5,展覽,門票,演唱會,球賽,健身,運動中心,旅館,飯店,民宿'],
-  ['subscription', 'netflix,spotify,youtube,disney,icloud,google one,dropbox,office,adobe,chatgpt,訂閱,月費,會員費'],
-  ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
+  // 一、品項本身就足以判斷，不受店家影響
+  ['fuel', '無鉛,汽油,柴油,加油,中油,台塑石油,台亞,山隆,全國加油站,機油,gas', ''],
+  ['transport', '停車,洗車,計程車,uber,捷運,悠遊卡,一卡通,高鐵,台鐵,客運,公車,機票,ETC,過路費,國道,輪胎,保養廠,汽車維修', ''],
+  ['daily', '衛生紙,面紙,抽取式,捲筒,濕紙巾,洗髮,潤髮,沐浴,肥皂,香皂,牙膏,牙刷,牙線,漱口,洗面乳,洗衣精,洗衣粉,柔軟精,漂白,洗碗精,清潔劑,菜瓜布,垃圾袋,保鮮膜,夾鏈袋,鋁箔,棉花棒,刮鬍,衛生棉,尿布,除濕,樟腦,芳香劑,殺蟲,蟑螂,螞蟻,蚊香,電池,燈泡,口罩,酒精,乾洗手,拖把,掃把,抹布,手套,指甲剪,抓耙,收納,購物袋,提袋,生活雜貨,淨水', ''],
+  ['daily', '', '屈臣氏,康是美,寶雅,日藥本舖'],
+  ['medical', '藥局,藥妝,診所,醫院,掛號,牙醫,眼科,健保,維他命,維生素,保健,葉黃素,益生菌,OK繃,感冒藥,止痛,腸胃藥', ''],
+  ['subscription', 'netflix,spotify,youtube,disney,icloud,google one,dropbox,office,adobe,chatgpt,訂閱,月費,會員費', ''],
+  ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻', ''],
+  ['education', '報名費,學費,補習,課程,講座,書籍,文具,鑑定,認證,考試', ''],
+  ['entertainment', '電影,影城,威秀,國賓,KTV,遊戲,steam,switch,ps5,展覽,門票,演唱會,球賽,健身,旅館,民宿', ''],
+
+  // 二、店家決定屬性：超商／餐飲店賣的一律算餐飲
+  // 連鎖店的公司登記名常看不出行業（和德昌＝麥當勞、爭鮮＝壽司），故直接列名
+  ['food', '', '超商,便利商店,7-ELEVEN,統一超商,全家便利,萊爾富,OK超商,麥當勞,和德昌,肯德基,摩斯,漢堡,披薩,壽司,爭鮮,拉麵,火鍋,燒肉,麵食,麵店,小吃,餐廳,餐飲,食堂,飲料,茶飲,咖啡,星巴克,路易莎,cama,清心,五十嵐,迷客夏,大苑子,春水堂,茶店,烘焙,麵包,早餐,便當,自助餐,食品行,飲食'],
+
+  // 三、店家決定屬性：超市／賣場／市場才把食材視為生鮮
+  ['produce', '', '超市,量販,全聯,家樂福,大潤發,愛買,美廉社,楓康,裕毛屋,果菜,市場,農會,漁會,肉舖,魚舖,菜舖'],
+
+  // 四、以上都沒命中時，才單看品項
+  ['food', '便當,飯糰,炒飯,滷肉飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,青茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,純水,茶葉,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,薯,雞塊,水餃,鍋貼,沙拉,三明治,關東煮,茶葉蛋,套餐,伴手禮,零嘴,米果,夾心餅,波的多,乖乖,卡迪那,蛋撻,可可,牛乳,高蛋白,火腿,煎蛋,嫩雞,捲餅,食品,餐飲,雞肉', ''],
+  ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,牛番茄,小黃瓜,茄子,南瓜,青椒,彩椒,香菇,金針菇,杏鮑菇,豆芽,青蔥,老薑,嫩薑,蒜頭,香菜,九層塔,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,酪梨,洗選蛋,雞蛋,雞胸肉,雞腿肉,豬肉,牛肉片,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蛤蜊,豆腐,豆干,生鮮,牛奶,鮮奶,牛乳,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,砂糖,白糖,冰糖,醬油,味精,調味', ''],
+  ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -535,17 +551,25 @@ function nextCatOrder(){ return categories.reduce((m,c)=>Math.max(m, c.order??0)
 function sortRules(){ rules.sort((a,b)=>(a.order??999)-(b.order??999)); }
 function nextRuleOrder(){ return rules.reduce((m,r)=>Math.max(m, r.order??0), 0) + 1; }
 
-/* 依關鍵字規則推測分類；找不到就回傳 null（交由呼叫端決定預設值）。
-   比對用小寫做不分大小寫的子字串比對，order 小的規則優先。 */
-function classifyItem(name){
-  if (!name) return null;
-  const t = String(name).toLowerCase();
+/* 依規則推測分類，找不到回傳 null（由呼叫端決定預設值）。
+   規則可同時限定「品名關鍵字」與「店家關鍵字」：
+     只有品名 → 看品名；只有店家 → 該店家所有品項都適用；兩者都有 → 須同時命中。
+   一律小寫做子字串比對，order 小的先比對。 */
+const hitsAny = (text, list) => {
+  if (!list || !list.length) return null;         // 沒設條件 = 不限制
+  const t = String(text || '').toLowerCase();
+  if (!t) return false;
+  return list.some(k => { const s = String(k).trim().toLowerCase(); return s && t.includes(s); });
+};
+
+function classifyItem(name, seller){
   for (const r of rules){
-    if (!catById(r.category)) continue;      // 分類已被刪除的規則跳過
-    for (const kw of r.keywords){
-      const k = kw.trim().toLowerCase();
-      if (k && t.includes(k)) return r.category;
-    }
+    if (!catById(r.category)) continue;           // 分類已被刪除的規則跳過
+    const byName   = hitsAny(name, r.keywords);
+    const bySeller = hitsAny(seller, r.sellers);
+    if (byName === null && bySeller === null) continue;   // 空規則
+    if (byName === false || bySeller === false) continue; // 有設條件但沒中
+    return r.category;
   }
   return null;
 }
@@ -569,13 +593,14 @@ function renderHeaderTotal(){
 
 /* 內建資料的種子版本。往上加時只補「這個版本新增的」預設分類/規則，
    已存在的 id 一律不覆蓋，使用者刪掉的也不會被重新塞回來。 */
-const SEED_VERSION = 3;
+const SEED_VERSION = 4;
 
 const seedRuleId = (cat, i) => 'seed-' + cat + '-' + i;
+const splitKw = s => String(s || '').split(/[,，、\n]/).map(x => x.trim()).filter(Boolean);
 function buildSeedRules(){
-  return DEFAULT_RULES.map(([cat, kws], i) => ({
+  return DEFAULT_RULES.map(([cat, kws, sellers], i) => ({
     id: seedRuleId(cat, i), category: cat,
-    keywords: kws.split(',').map(s=>s.trim()).filter(Boolean), order: i + 1,
+    keywords: splitKw(kws), sellers: splitKw(sellers), order: i + 1,
   }));
 }
 
@@ -599,18 +624,21 @@ async function loadLocal(){
   if (!rules.length){
     rules = buildSeedRules();
     for (const r of rules) await idbPut('rules', r);
-  } else if (seeded < 3){
-    // 把新版補充的預設關鍵字併進既有的內建規則（自建規則完全不動）。
-    // 例：發票印「九五無鉛」而舊規則只有「95無鉛」，靠這次合併補上「無鉛」。
-    for (const s of buildSeedRules()){
-      const cur = rules.find(r => r.id === s.id);
-      if (!cur) { rules.push(s); await idbPut('rules', s); continue; }
-      const merged = Array.from(new Set([...cur.keywords, ...s.keywords]));
-      if (merged.length !== cur.keywords.length){
-        cur.keywords = merged;
-        await idbPut('rules', cur);
-      }
+  } else if (seeded < 4){
+    // v4 引入「店家關鍵字」並重排順序，舊的內建規則沿用會誤判（超商即食品被當生鮮），
+    // 因此整組換新。使用者自建的規則（id 不是 seed- 開頭）完全保留。
+    for (const r of rules.filter(x => String(x.id).startsWith('seed-'))) await idbDelete('rules', r.id);
+    const custom = rules.filter(x => !String(x.id).startsWith('seed-'));
+    const seeds = buildSeedRules();
+    for (const r of seeds) await idbPut('rules', r);
+    // 自建規則排在內建之後，避免被內建規則搶先命中
+    let n = seeds.length;
+    for (const c of custom){
+      c.order = ++n;
+      c.sellers = c.sellers || [];
+      await idbPut('rules', c);
     }
+    rules = [...seeds, ...custom];
   }
   if (seeded < SEED_VERSION) localStorage.setItem('ledger-seed', String(SEED_VERSION));
 
@@ -1059,11 +1087,18 @@ function renderRuleList(){
   if (!rules.length){ wrap.innerHTML = '<div class="empty" style="padding:1.4rem;">尚無規則</div>'; return; }
   wrap.innerHTML = rules.map(r => {
     const c = catById(r.category);
+    const sel = (r.sellers || []);
+    const parts = [];
+    if (sel.length) parts.push(`<span style="color:var(--blue)">🏪 ${escapeHtml(sel.join('、'))}</span>`);
+    if (r.keywords.length) parts.push(escapeHtml(r.keywords.join('、')));
+    const label = sel.length && !r.keywords.length ? '依店家'
+                : sel.length ? `店家＋${r.keywords.length} 個品名`
+                : `${r.keywords.length} 個關鍵字`;
     return `<div class="rule-row">
       <span class="ico">${c ? c.icon : '⚠️'}</span>
       <div class="body">
-        <div class="nm">${c ? c.name : '（分類已刪除）'} <span style="color:var(--sub2);font-weight:400;">· ${r.keywords.length} 個關鍵字</span></div>
-        <div class="kw">${escapeHtml(r.keywords.join('、'))}</div>
+        <div class="nm">${c ? c.name : '（分類已刪除）'} <span style="color:var(--sub2);font-weight:400;">· ${label}</span></div>
+        <div class="kw">${parts.join('　')}</div>
       </div>
       <button class="icon-btn edit-rule" data-id="${r.id}"><i class="ti ti-pencil"></i></button>
     </div>`;
@@ -1079,6 +1114,7 @@ function openRuleSheet(id){
   document.getElementById('ru-cat').innerHTML = categories.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
   document.getElementById('ru-cat').value = r ? r.category : (categories[0] && categories[0].id);
   document.getElementById('ru-kw').value = r ? r.keywords.join(',') : '';
+  document.getElementById('ru-seller').value = r ? (r.sellers || []).join(',') : '';
   document.getElementById('ru-delete').style.display = r ? 'inline-flex' : 'none';
   document.getElementById('rule-overlay').classList.add('show');
 }
@@ -1088,11 +1124,12 @@ document.getElementById('rule-overlay').addEventListener('click', (e)=>{ if(e.ta
 
 document.getElementById('ru-save').addEventListener('click', async () => {
   // 全形逗號、頓號、換行都當分隔符，貼上清單時比較不會出錯
-  const kws = document.getElementById('ru-kw').value.split(/[,，、\n]/).map(s=>s.trim()).filter(Boolean);
-  if (!kws.length){ toast('請至少輸入一個關鍵字'); return; }
+  const kws = splitKw(document.getElementById('ru-kw').value);
+  const sellers = splitKw(document.getElementById('ru-seller').value);
+  if (!kws.length && !sellers.length){ toast('請至少輸入品名或店家關鍵字'); return; }
   const old = editingRuleId ? rules.find(r=>r.id===editingRuleId) : null;
   await saveRule({ id: editingRuleId || uid(), category: document.getElementById('ru-cat').value,
-                   keywords: kws, order: old ? old.order : nextRuleOrder() });
+                   keywords: kws, sellers, order: old ? old.order : nextRuleOrder() });
   document.getElementById('rule-overlay').classList.remove('show');
   toast('已儲存規則');
 });
@@ -1762,14 +1799,18 @@ function parseFlat(rows, delim){
     return -1;
   };
 
-  let dateCol = findByHead(['日期','時間']);
+  // 關鍵字由「最具體」排到「最寬鬆」。財政部匯出檔同時有「發票金額」與
+  // 「消費明細_金額」，前者其實逐列重複明細金額、不是整張總額，故必須先抓後者；
+  // 「賣方統一編號」也會被寬鬆的「賣方」誤中，所以「賣方名稱」要排前面。
+  let dateCol = findByHead(['發票日期','日期','時間']);
   if (dateCol < 0) dateCol = pickCol(body, c => !!csvDate(c));
   let invCol = findByHead(['發票號碼','發票']);
   if (invCol < 0) invCol = pickCol(body, c => INV_NO_RE.test(c));
-  let amtCol = findByHead(['小計','金額','總計','價']);
+  let amtCol = findByHead(['消費明細_金額','明細_金額','明細金額','小計','金額','總計','價']);
   if (amtCol < 0) amtCol = pickNumericCol(body, [invCol, dateCol]);
-  const sellerCol = findByHead(['店家','商店','店名','賣方','營業人']);
-  let nameCol = findByHead(['品名','品項','名稱']);
+  const sellerCol = findByHead(['賣方名稱','店家名稱','商店名稱','店名','店家','商店','營業人名稱','賣方']);
+  const qtyCol = findByHead(['消費明細_數量','數量']);
+  let nameCol = findByHead(['消費明細_品名','品名','品項','商品名稱']);
   if (nameCol < 0) nameCol = pickTextCol(body, [invCol, amtCol, dateCol, sellerCol]);
   if (dateCol < 0 || amtCol < 0) throw new Error('找不到日期或金額欄位，請確認檔案格式');
 
@@ -1784,12 +1825,12 @@ function parseFlat(rows, delim){
     if (!map.has(key)) map.set(key, { invNum: (invCol>=0 ? r[invCol] : '') || '', date, total:0, seller, items:[] });
     const inv = map.get(key);
     const nm = (nameCol>=0 ? r[nameCol] : '') || seller || '未列品名';
-    inv.items.push({ name: nm, qty:1, amount });
-    inv.total += amount;
+    inv.items.push({ name: nm, qty: (qtyCol>=0 ? (csvNum(r[qtyCol]) ?? 1) : 1), amount });
+    inv.total += amount;   // 此格式沒有可信的整張總額欄，總額即明細加總
   });
   const invoices = [...map.values()];
   return { format: header ? '單層表格（含表頭）' : '單層表格', delim, invoices,
-           cols:{ 發票號碼:invCol, 日期:dateCol, 金額:amtCol, 品名:nameCol, 店家:sellerCol },
+           cols:{ 發票號碼:invCol, 日期:dateCol, 金額:amtCol, 品名:nameCol, 店家:sellerCol, 數量:qtyCol },
            reconciled: 1 };
 }
 
@@ -1872,6 +1913,51 @@ function reconcileRate(invoices){
 /* ---- 匯入預覽 ---- */
 let csvDraft = null;
 
+/* 把一張發票的品項依分類合併成幾筆記錄。
+   折扣（提貨卡、飲冰促…）在明細裡是負數，若自成一類會產生一筆莫名的負數「其他」，
+   所以把負數併入該張發票中金額最大的那一類——折扣通常就是折在主要消費上。 */
+function groupInvoiceItems(inv){
+  const pos = {}, neg = [];
+  for (const it of inv.items){
+    if (!it.amount) continue;
+    if (it.amount < 0) neg.push(it);
+    else (pos[it.category] ||= []).push(it);
+  }
+  let groups = Object.entries(pos).map(([category, items]) => ({
+    category, items, amount: items.reduce((s,x)=>s+x.amount,0),
+  })).sort((a,b) => b.amount - a.amount);
+
+  if (neg.length){
+    const discount = neg.reduce((s,x)=>s+x.amount,0);
+    if (groups.length){
+      groups[0].items = [...groups[0].items, ...neg];
+      groups[0].amount = Math.round((groups[0].amount + discount)*100)/100;
+      groups[0].discounted = true;
+    } else {
+      groups = [{ category:'other', items:neg, amount:discount }];
+    }
+  }
+  return groups.filter(g => g.amount !== 0);
+}
+
+/* 記住每個店家用什麼付款方式，下次匯入自動帶入。
+   連鎖店各分店名稱不同（統一超商…第一三七分公司），故取公司名前綴當索引。 */
+const sellerKey = s => String(s||'').split(/股份有限公司|有限公司|公司/)[0].trim().slice(0,12);
+function sellerPayment(seller){
+  if (!seller) return 'credit';
+  try{
+    const m = JSON.parse(localStorage.getItem('ledger-seller-pay') || '{}');
+    return m[sellerKey(seller)] || 'credit';
+  }catch(e){ return 'credit'; }
+}
+function rememberSellerPayment(invoices){
+  try{
+    const m = JSON.parse(localStorage.getItem('ledger-seller-pay') || '{}');
+    for (const inv of invoices){ if (inv.seller) m[sellerKey(inv.seller)] = inv.payment; }
+    localStorage.setItem('ledger-seller-pay', JSON.stringify(m));
+  }catch(e){}
+}
+
 document.getElementById('csv-pick').addEventListener('click', () => document.getElementById('csv-input').click());
 document.getElementById('csv-input').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = '';
@@ -1906,24 +1992,17 @@ function renderCsvSheet(fileName){
 
   // 先把每張發票的品項分類算好，讓預覽與實際匯入結果一致
   for (const inv of d.fresh){
-    const sum = inv.items.reduce((s,x)=>s+x.amount,0);
     if (!inv.items.length) inv.items = [{ name: inv.seller || '未列明細', qty:1, amount: inv.total }];
-    else if (inv.total && Math.abs(inv.total - sum) >= 1)
-      inv.items.push({ name: inv.total>sum ? '其他（未列明細）':'折扣／優惠', qty:1,
-                       amount: Math.round((inv.total-sum)*100)/100 });
-    for (const it of inv.items) it.category = classifyItem(it.name) || classifyItem(inv.seller) || 'other';
+    for (const it of inv.items) it.category = classifyItem(it.name, inv.seller) || 'other';
+    inv.groups = groupInvoiceItems(inv);
+    inv.payment = inv.payment || sellerPayment(inv.seller);
   }
 
   const byCat = {};
   let recCount = 0, total = 0;
   for (const inv of d.fresh){
-    const g = {};
-    for (const it of inv.items){ if (it.amount) (g[it.category] ||= []).push(it); }
-    recCount += Object.keys(g).length;
-    for (const [c, its] of Object.entries(g)){
-      const a = its.reduce((s,x)=>s+x.amount,0);
-      byCat[c] = (byCat[c]||0) + a; total += a;
-    }
+    recCount += inv.groups.length;
+    for (const g of inv.groups){ byCat[g.category] = (byCat[g.category]||0) + g.amount; total += g.amount; }
   }
   d.summary = { recCount, total, dup };
 
@@ -1939,19 +2018,40 @@ function renderCsvSheet(fileName){
   document.getElementById('csv-cols').innerHTML = '偵測到的欄位：' +
     Object.entries(d.cols).filter(([,v])=>v>=0).map(([k,v])=>`${k}=第${v+1}欄`).join('　');
 
-  const cats = categories.map(c=>c.id);
-  document.getElementById('csv-items').innerHTML = d.fresh.slice(0,6).map(inv => `
+  const cashN = d.fresh.filter(i=>i.payment==='cash').length;
+  document.getElementById('csv-paybar').innerHTML =
+    `<span>💵 現金 <b>${cashN}</b>　💳 信用卡 <b>${d.fresh.length-cashN}</b></span>` +
+    `<span><button class="btn-link" data-all="cash">全設現金</button>` +
+    `<button class="btn-link" data-all="credit" style="margin-left:10px">全設信用卡</button></span>`;
+
+  document.getElementById('csv-items').innerHTML = d.fresh.map((inv, idx) => `
     <div class="csv-prev">
-      <div class="csv-prev-h">${inv.date}　${escapeHtml(inv.seller||inv.invNum||'')}　<b>${fmt(inv.total)}</b></div>
-      ${inv.items.map(it=>{ const c=catById(it.category)||{icon:'❓',name:'?'};
-        return `<div class="csv-prev-i"><span>${c.icon} ${escapeHtml(it.name)}</span><span>${fmt(it.amount)}</span></div>`;
+      <div class="csv-prev-h">
+        <span>${inv.date}　${escapeHtml(inv.seller || inv.invNum || '')}</span>
+        <span class="csv-pay" data-idx="${idx}" role="button">${inv.payment==='cash' ? '💵 現金' : '💳 信用卡'}</span>
+      </div>
+      ${inv.groups.map(g => {
+        const c = catById(g.category) || {icon:'❓',name:'?'};
+        return `<div class="csv-prev-i"><span>${c.icon} ${c.name}${g.discounted?' <span class="tag-fixed">含折扣</span>':''}
+                  <span class="qty">${escapeHtml(g.items.map(x=>x.name).join('、')).slice(0,40)}</span></span>
+                <span><b>${fmt(g.amount)}</b></span></div>`;
       }).join('')}
-    </div>`).join('') + (d.fresh.length>6 ? `<div class="help" style="text-align:center">…另外還有 ${d.fresh.length-6} 張</div>` : '');
+    </div>`).join('');
 
   document.getElementById('csv-summary').innerHTML =
     Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,a])=>{
       const cc = catById(c); return `${cc?cc.icon+' '+cc.name:'?'} ${fmt(a)}`;
     }).join('　') || '（沒有可匯入的資料）';
+
+  document.querySelectorAll('.csv-pay').forEach(el => el.addEventListener('click', () => {
+    const inv = d.fresh[+el.dataset.idx];
+    inv.payment = inv.payment === 'cash' ? 'credit' : 'cash';
+    renderCsvSheet(fileName);
+  }));
+  document.querySelectorAll('#csv-paybar .btn-link').forEach(b => b.addEventListener('click', () => {
+    for (const inv of d.fresh) inv.payment = b.dataset.all;
+    renderCsvSheet(fileName);
+  }));
 }
 
 document.getElementById('csv-close').addEventListener('click', () => {
@@ -1963,24 +2063,21 @@ document.getElementById('csv-overlay').addEventListener('click', (e) => {
 
 document.getElementById('csv-save').addEventListener('click', async () => {
   const d = csvDraft; if (!d || !d.fresh.length) return;
-  const pay = document.querySelector('#csv-pay-seg button.active').dataset.pay;
   let saved = 0;
   for (const inv of d.fresh){
-    const g = {};
-    for (const it of inv.items){ if (it.amount) (g[it.category] ||= []).push(it); }
     const stamp = Date.now();
-    for (const [catId, its] of Object.entries(g)){
-      const cat = catById(catId);
+    for (const g of inv.groups){
+      const cat = catById(g.category);
       await saveRecord({
-        id: uid(), date: inv.date,
-        amount: its.reduce((s,x)=>s+x.amount,0),
-        category: catId, payment: pay, fixed: cat ? !!cat.fixed : false,
-        note: (inv.seller ? inv.seller + '：' : '') + its.map(x=>x.name).join('、'),
+        id: uid(), date: inv.date, amount: g.amount,
+        category: g.category, payment: inv.payment, fixed: cat ? !!cat.fixed : false,
+        note: (inv.seller ? sellerKey(inv.seller) + '：' : '') + g.items.map(x=>x.name).join('、'),
         photo:null, invNum: inv.invNum || null, createdAt: stamp,
       });
       saved++;
     }
   }
+  rememberSellerPayment(d.fresh);
   document.getElementById('csv-overlay').classList.remove('show');
   const st = document.getElementById('csv-status');
   st.className = 'ei-status show ok';
@@ -1990,10 +2087,6 @@ document.getElementById('csv-save').addEventListener('click', async () => {
   toast(`已匯入 ${saved} 筆記錄`);
 });
 
-document.getElementById('csv-pay-seg').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  document.querySelectorAll('#csv-pay-seg button').forEach(x=>x.classList.toggle('active', x===b));
-});
 
 /* =========================================================
    Settings: backup export/import
