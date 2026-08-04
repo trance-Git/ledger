@@ -261,7 +261,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="card">
       <p class="help" style="margin-top:0;">到財政部平台或發票 App 匯出載具發票 CSV，選檔後會自動辨識欄位、套用分類規則、依分類拆帳。匯入前會先讓你確認。</p>
       <button class="btn btn-primary btn-block" id="csv-pick"><i class="ti ti-file-import"></i> 選擇發票 CSV</button>
-      <input type="file" id="csv-input" accept=".csv,.txt,text/csv,text/plain" style="display:none;">
+      <!-- 刻意不設 accept：iOS 的檔案選擇器對 CSV 的類型判定不可靠，
+           設了反而會把檔案變灰選不到。選錯檔由解析器擋下並提示。 -->
+      <input type="file" id="csv-input" style="display:none;">
       <div id="csv-status" class="ei-status"></div>
     </div>
 
@@ -475,7 +477,7 @@ const DEFAULT_RULES = [
   ['utilities', '電費,水費,瓦斯,天然氣,台電,自來水,電信,中華電信,遠傳,台灣大哥大,網路費,寬頻'],
 ];
 
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.7';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -1614,6 +1616,26 @@ function renderTrendChart(periodList){
    ========================================================= */
 const INV_NO_RE = /^[A-Z]{2}\d{8}$/;
 
+/* 用檔頭位元組判斷檔案種類，避免把 Excel/圖片當文字硬解出一堆亂碼 */
+async function sniffFile(file){
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const hex = [...head].map(b => b.toString(16).padStart(2,'0')).join('');
+  const name = (file.name || '').toLowerCase();
+  if (hex.startsWith('504b0304'))                              // ZIP 容器
+    return /\.(xlsx|xlsm)$/.test(name) ? 'xlsx' : 'zip';
+  if (hex.startsWith('d0cf11e0a1b11ae1')) return 'xls';        // 舊版 Excel (OLE2)
+  if (hex.startsWith('25504446')) return 'pdf';
+  if (hex.startsWith('89504e47') || hex.startsWith('ffd8ff') || hex.startsWith('47494638')) return 'image';
+  return 'text';
+}
+const SNIFF_MSG = {
+  xlsx:'這是 Excel 檔（.xlsx）。請在平台匯出時選擇 <b>CSV</b> 格式，或用 Excel 開啟後「另存新檔」選 CSV。',
+  xls: '這是舊版 Excel 檔（.xls）。請用 Excel 開啟後「另存新檔」選 CSV。',
+  zip: '這是壓縮檔，請先解壓縮後再選裡面的 CSV。',
+  pdf: '這是 PDF 檔，不是 CSV。',
+  image:'這是圖片檔，不是 CSV。',
+};
+
 async function readCsvText(file){
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes[0]===0xEF && bytes[1]===0xBB && bytes[2]===0xBF)
@@ -1857,6 +1879,12 @@ document.getElementById('csv-input').addEventListener('change', async (e) => {
   const st = document.getElementById('csv-status');
   st.className = 'ei-status show'; st.textContent = '解析中...';
   try{
+    const kind = await sniffFile(file);
+    if (kind !== 'text'){
+      st.className = 'ei-status show err';
+      st.innerHTML = '❌ ' + SNIFF_MSG[kind];
+      return;
+    }
     const text = await readCsvText(file);
     const parsed = parseInvoiceCsv(text);
     if (!parsed.invoices.length) throw new Error('沒有解析出任何發票資料');
