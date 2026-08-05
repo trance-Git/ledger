@@ -88,6 +88,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ---- list ---- */
 .day-group{margin-bottom:10px;}
 .day-head{display:flex;justify-content:space-between;align-items:center;padding:6px 2px;font-size:12.5px;color:var(--sub);}
+.rec-swipe{position:relative;margin-bottom:8px;border-radius:12px;overflow:hidden;}
+.rec-swipe .swipe-del{position:absolute;top:0;right:0;bottom:0;width:96px;border:none;background:var(--red);color:#fff;font-size:13px;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;}
+.rec-swipe .rec-row{position:relative;margin-bottom:0;transition:transform .18s ease;will-change:transform;}
+.rec-swipe.open .rec-row{transform:translateX(-96px);}
 .rec-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:11px 12px;margin-bottom:8px;cursor:pointer;}
 .rec-row .ico{font-size:22px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:9px;flex-shrink:0;}
 .rec-row .mid{flex:1;min-width:0;}
@@ -147,6 +151,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat-stat-row .bar-fg{height:100%;background:var(--blue);border-radius:4px;}
 .cat-stat-row .pct{font-size:11px;color:var(--sub2);width:38px;text-align:right;flex-shrink:0;}
 .cat-stat-row .amt2{font-size:13px;font-weight:600;width:78px;text-align:right;flex-shrink:0;}
+.cat-stat-row{cursor:pointer;}
+.cd-row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-bottom:7px;cursor:pointer;}
+.cd-mid{flex:1;min-width:0;font-size:12.5px;color:var(--sub);}
+.cd-mid .note{font-size:13px;color:var(--text);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cd-mid .qty{margin-left:6px;font-size:11px;color:var(--sub2);}
+.cd-amt{font-size:14px;font-weight:600;flex-shrink:0;}
+.learn-row{margin-top:8px;font-size:12.5px;color:var(--sub);}
 .merge-toggle{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:400;color:var(--sub);text-transform:none;letter-spacing:0;cursor:pointer;}
 .merge-toggle input{width:15px;height:15px;}
 
@@ -258,8 +269,8 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       </div>
       <div class="wallet-sub">
         <div><span>今日支出</span><b id="w-today">NT$0</b></div>
-        <div><span>本月收入</span><b id="w-income-sum">NT$0</b></div>
-        <div><span>本月結餘 <span class="lbl-note">含刷卡</span></span><b id="w-balance">NT$0</b></div>
+        <div><span>本月支出</span><b id="w-month-out">NT$0</b></div>
+        <div><span>本月收支</span><b id="w-balance">NT$0</b></div>
       </div>
     </div>
     <div class="month-nav">
@@ -379,6 +390,8 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button data-type="income">收入</button>
     </div>
 
+    <div class="field"><label>日期</label><input type="date" id="r-date"></div>
+
     <div class="quick-actions" id="quick-actions">
       <button class="btn btn-scan" id="scan-qr-btn"><i class="ti ti-qrcode"></i> 掃描發票</button>
       <button class="btn btn-ghost" id="quick-photo-btn"><i class="ti ti-camera"></i> 拍收據</button>
@@ -392,6 +405,18 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     </div>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none;">
 
+    <div class="field"><label>品項／備註</label><textarea id="r-note" placeholder="例如：高麗菜、衛生紙（會自動判斷分類）"></textarea>
+      <div class="auto-hint" id="auto-hint" style="display:none;"></div>
+      <label class="chk-row learn-row" id="learn-row" style="display:none;">
+        <input type="checkbox" id="learn-chk">
+        <span id="learn-label"></span>
+      </label>
+    </div>
+
+    <div class="field"><label>分類</label><div class="cat-grid" id="r-cat-grid"></div></div>
+    <div class="field" id="r-subcat-wrap" style="display:none;"><label>細分（可不選）</label>
+      <div class="cat-grid" id="r-subcat-grid"></div></div>
+
     <div class="field"><label>付款方式</label>
       <div class="seg" id="r-pay-seg">
         <button data-pay="cash" class="active">💵 現金</button>
@@ -399,17 +424,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       </div>
     </div>
 
-    <div class="field"><label>分類</label><div class="cat-grid" id="r-cat-grid"></div></div>
-    <div class="field" id="r-subcat-wrap" style="display:none;"><label>細分（可不選）</label>
-      <div class="cat-grid" id="r-subcat-grid"></div></div>
-
-    <div class="field"><label>日期</label><input type="date" id="r-date"></div>
-
     <div class="chk-row"><input type="checkbox" id="r-fixed"><label for="r-fixed">列為固定支出</label></div>
-
-    <div class="field"><label>品項／備註</label><textarea id="r-note" placeholder="例如：高麗菜、衛生紙（會自動判斷分類）"></textarea>
-      <div class="auto-hint" id="auto-hint" style="display:none;"></div>
-    </div>
 
     <div class="form-actions">
       <button class="btn btn-danger" id="r-delete" style="display:none;"><i class="ti ti-trash"></i></button>
@@ -472,6 +487,16 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="form-actions">
       <button class="btn btn-primary btn-block" id="inv-save">確認儲存</button>
     </div>
+  </div>
+</div>
+
+<!-- 分類明細 -->
+<div class="overlay" id="catdetail-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2 id="catdetail-title"></h2><button id="catdetail-close">&times;</button></div>
+    <div id="catdetail-meta" class="inv-meta"></div>
+    <div id="catdetail-list" style="margin-top:12px;"></div>
   </div>
 </div>
 
@@ -554,7 +579,7 @@ const DEFAULT_CATEGORIES = [
 const DEFAULT_RULES = [
   // 一、品項本身就足以判斷，不受店家影響
   ['fuel', '無鉛,汽油,柴油,加油,中油,台塑石油,台亞,山隆,全國加油站,機油,gas', ''],
-  ['transport', '停車,洗車,計程車,uber,捷運,悠遊卡,一卡通,高鐵,台鐵,客運,公車,機票,ETC,過路費,國道,輪胎,保養廠,汽車維修', ''],
+  ['transport', '停車,洗車,計程車,uber,捷運,悠遊卡,一卡通,高鐵,台鐵,客運,公車,機票,ETC,過路費,國道,輪胎,車子保養,汽車保養,機車保養,定期保養,保養廠,汽車維修,車輛維修,修車,板金,引擎,煞車,電瓶,驗車,監理,機油,雨刷,車用', ''],
   ['daily', '衛生紙,面紙,抽取式,捲筒,濕紙巾,洗髮,潤髮,沐浴,肥皂,香皂,牙膏,牙刷,牙線,漱口,洗面乳,洗衣精,洗衣粉,柔軟精,漂白,洗碗精,清潔劑,菜瓜布,垃圾袋,保鮮膜,夾鏈袋,鋁箔,棉花棒,刮鬍,衛生棉,尿布,除濕,樟腦,芳香劑,殺蟲,蟑螂,螞蟻,蚊香,電池,燈泡,口罩,酒精,乾洗手,拖把,掃把,抹布,手套,指甲剪,抓耙,收納,購物袋,提袋,生活雜貨,淨水', ''],
   ['daily', '', '屈臣氏,康是美,寶雅,日藥本舖'],
   ['medical', '藥局,藥妝,診所,醫院,掛號,牙醫,眼科,健保,維他命,維生素,保健,葉黃素,益生菌,OK繃,感冒藥,止痛,腸胃藥', ''],
@@ -571,12 +596,12 @@ const DEFAULT_RULES = [
   ['produce', '', '超市,量販,全聯,家樂福,大潤發,愛買,美廉社,楓康,裕毛屋,果菜,市場,農會,漁會,肉舖,魚舖,菜舖'],
 
   // 四、以上都沒命中時，才單看品項
-  ['food', '便當,飯糰,炒飯,滷肉飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,青茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,純水,茶葉,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,薯,雞塊,水餃,鍋貼,沙拉,三明治,關東煮,茶葉蛋,套餐,伴手禮,零嘴,米果,夾心餅,波的多,乖乖,卡迪那,蛋撻,可可,牛乳,高蛋白,火腿,煎蛋,嫩雞,捲餅,食品,餐飲,雞肉', ''],
+  ['food', '便當,飯糰,炒飯,滷肉飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,青茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,純水,茶葉,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,薯,雞塊,水餃,鍋貼,沙拉,三明治,關東煮,茶葉蛋,套餐,伴手禮,零嘴,米果,夾心餅,波的多,乖乖,卡迪那,蛋撻,可可,牛乳,高蛋白,火腿,煎蛋,嫩雞,捲餅,食品,餐飲,雞肉,飲,茶,珍奶,珍珠,手搖,果汁,汽水,啤酒,調酒,氣泡,冰沙,思樂冰,豆花,甜點,布丁,麻糬,雞排,滷味,鹹酥雞,便當,炸,烤,滷,炒', ''],
   ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,牛番茄,小黃瓜,茄子,南瓜,青椒,彩椒,香菇,金針菇,杏鮑菇,豆芽,青蔥,老薑,嫩薑,蒜頭,香菜,九層塔,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,酪梨,洗選蛋,雞蛋,雞胸肉,雞腿肉,豬肉,牛肉片,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蛤蜊,豆腐,豆干,生鮮,牛奶,鮮奶,牛乳,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,砂糖,白糖,冰糖,醬油,味精,調味', ''],
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -695,7 +720,7 @@ function renderWallet(){
   const bal = monthIn - monthOut;
   document.getElementById('w-cash').textContent = fmt(cash);
   document.getElementById('w-today').textContent = fmt(todaySpend);
-  document.getElementById('w-income-sum').textContent = fmt(monthIn);
+  document.getElementById('w-month-out').textContent = fmt(monthOut);
   const b = document.getElementById('w-balance');
   b.textContent = fmt(bal);
   b.style.color = bal >= 0 ? '' : '#ffcdd2';
@@ -709,7 +734,7 @@ function renderHeaderTotal(){
 
 /* 內建資料的種子版本。往上加時只補「這個版本新增的」預設分類/規則，
    已存在的 id 一律不覆蓋，使用者刪掉的也不會被重新塞回來。 */
-const SEED_VERSION = 5;
+const SEED_VERSION = 6;
 
 const seedRuleId = (cat, i) => 'seed-' + cat + '-' + i;
 const splitKw = s => String(s || '').split(/[,，、\n]/).map(x => x.trim()).filter(Boolean);
@@ -743,9 +768,9 @@ async function loadLocal(){
   if (!rules.length){
     rules = buildSeedRules();
     for (const r of rules) await idbPut('rules', r);
-  } else if (seeded < 4){
-    // v4 引入「店家關鍵字」並重排順序，舊的內建規則沿用會誤判（超商即食品被當生鮮），
-    // 因此整組換新。使用者自建的規則（id 不是 seed- 開頭）完全保留。
+  } else if (seeded < SEED_VERSION){
+    // 內建規則改版時整組換新（關鍵字調整、順序重排都靠這條生效）。
+    // 使用者自建的規則（id 不是 seed- 開頭，含「記住這個品項」建立的）完全保留。
     for (const r of rules.filter(x => String(x.id).startsWith('seed-'))) await idbDelete('rules', r.id);
     const custom = rules.filter(x => !String(x.id).startsWith('seed-'));
     const seeds = buildSeedRules();
@@ -1182,6 +1207,7 @@ function renderCatGrid(){
     const cat = catById(selectedCat);
     if (cat) document.getElementById('r-fixed').checked = !!cat.fixed;
     renderCatGrid();
+    refreshLearnRow();
   }));
   renderSubCatGrid();
 }
@@ -1202,6 +1228,7 @@ function renderSubCatGrid(){
     const cat = catById(selectedCat);
     if (cat) document.getElementById('r-fixed').checked = !!cat.fixed;
     renderCatGrid();
+    refreshLearnRow();
   }));
 }
 
@@ -1363,10 +1390,22 @@ document.getElementById('r-save').addEventListener('click', async () => {
     photo: currentPhoto || null,
     createdAt: Date.now(),
   };
+  // 勾選「以後自動歸類」時，把品項存成一條規則
+  const learnChk = document.getElementById('learn-chk');
+  let learned = '';
+  if (learnChk.checked && !inc){
+    const kw = rec.note.slice(0, 12).trim();
+    if (kw && !classifyItem(kw)){
+      await saveRule({ id: uid(), category: selectedCat, keywords: [kw], sellers: [], order: nextRuleOrder() });
+      learned = kw;
+    }
+  }
+  learnChk.checked = false;
+
   await saveRecord(rec);
   closeRecordSheet();
   jumpToMonth(rec.date);
-  toast('已儲存');
+  toast(learned ? `已儲存，並記住「${learned}」` : '已儲存');
 });
 document.getElementById('r-delete').addEventListener('click', async () => {
   if (!editingId) return;
@@ -1382,18 +1421,45 @@ let catTouched = false;   // 使用者手動點過分類後就不再自動改動
 
 document.getElementById('r-note').addEventListener('input', (e) => {
   const hint = document.getElementById('auto-hint');
-  if (catTouched){ hint.style.display='none'; return; }
-  const hit = classifyItem(e.target.value);
-  if (!hit || hit === selectedCat){ if(!hit) hint.style.display='none'; return; }
-  selectedCat = hit;
-  document.querySelectorAll('.cat-chip').forEach(x=>x.classList.toggle('active', x.dataset.cat===hit));
-  const c = catById(hit);
-  if (c){
-    document.getElementById('r-fixed').checked = !!c.fixed;
-    hint.innerHTML = `<i class="ti ti-wand"></i> 已自動分類為 ${c.icon} ${c.name}`;
-    hint.style.display = 'flex';
+  const learn = document.getElementById('learn-row');
+  const text = e.target.value.trim();
+  const hit = catTouched ? null : classifyItem(text);
+
+  // 命中就一定顯示提示。先前只在「分類有變」時才顯示，但預設就停在餐飲，
+  // 打「飲料」時判斷結果與現況相同 → 直接 return，畫面毫無反應而像是壞掉。
+  if (hit){
+    selectedCat = hit;
+    const c = catById(hit);
+    if (c){
+      document.getElementById('r-fixed').checked = !!c.fixed;
+      hint.innerHTML = `<i class="ti ti-wand"></i> 已自動分類為 ${c.icon} ${catLabel(c)}`;
+      hint.style.display = 'flex';
+    }
+    renderCatGrid();
+  } else {
+    hint.style.display = 'none';
   }
+
+  refreshLearnRow();
 });
+
+/* 讓使用者把「這次的品項 → 這次選的分類」存成規則，下次就會自動歸類 */
+function updateLearnLabel(){
+  const text = document.getElementById('r-note').value.trim();
+  const c = catById(selectedCat);
+  const kw = text.slice(0, 12);
+  document.getElementById('learn-label').innerHTML =
+    `以後「<b>${escapeHtml(kw)}</b>」自動歸到 ${c ? c.icon + ' ' + catLabel(c) : ''}`;
+}
+// 只在「有輸入品項、且目前沒有任何規則命中」時才提供記憶選項
+function refreshLearnRow(){
+  const row = document.getElementById('learn-row');
+  if (!row) return;
+  const text = document.getElementById('r-note').value.trim();
+  const show = !!text && !classifyItem(text) && selectedType === 'expense';
+  row.style.display = show ? 'flex' : 'none';
+  if (show) updateLearnLabel();
+}
 
 /* ---- Photo + OCR ---- */
 let currentPhoto = null;
@@ -1632,19 +1698,75 @@ function renderList(){
       const inc = !isExpense(r);
       const c = inc ? {icon:'💰', name:'收入'} : (catById(r.category) || {icon:'❓',name:'未分類'});
       const payLbl = r.payment === 'cash' ? '現金' : '信用卡';
-      return `<div class="rec-row" data-id="${r.id}">
-        <div class="ico">${c.icon}</div>
-        <div class="mid"><div class="cat-name">${inc ? '收入・'+payLbl : catLabel(c)}${r.fixed?'<span class="tag-fixed">固定</span>':''}</div>${r.note?`<div class="note">${escapeHtml(r.note)}</div>`:''}</div>
-        <div class="amt ${inc ? 'income' : r.payment}">${inc ? '+' : (r.payment==='cash'?'':'-')}${fmt(r.amount)}</div>
+      return `<div class="rec-swipe" data-id="${r.id}">
+        <button class="swipe-del" data-id="${r.id}"><i class="ti ti-trash"></i> 刪除</button>
+        <div class="rec-row" data-id="${r.id}">
+          <div class="ico">${c.icon}</div>
+          <div class="mid"><div class="cat-name">${inc ? '收入・'+payLbl : catLabel(c)}${r.fixed?'<span class="tag-fixed">固定</span>':''}</div>${r.note?`<div class="note">${escapeHtml(r.note)}</div>`:''}</div>
+          <div class="amt ${inc ? 'income' : r.payment}">${inc ? '+' : (r.payment==='cash'?'':'-')}${fmt(r.amount)}</div>
+        </div>
       </div>`;
     }).join('');
     return `<div class="day-group"><div class="day-head"><span>${formatDateLabel(date)}</span><span>小計 ${fmt(subtotal)}</span></div>${rows}</div>`;
   }).join('');
+  attachSwipe(out);
   out.querySelectorAll('.rec-row').forEach(el => el.addEventListener('click', () => {
+    if (el.parentElement.classList.contains('open')) { closeAllSwipes(); return; }
     const rec = records.find(r=>r.id===el.dataset.id);
     if (rec) openRecordSheet(rec);
   }));
+  out.querySelectorAll('.swipe-del').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const rec = records.find(r=>r.id===btn.dataset.id);
+    if (!rec) return;
+    const c = catById(rec.category);
+    if (!confirm(`刪除這筆紀錄？\n${rec.date}　${c?catLabel(c):'收入'}　${fmt(rec.amount)}${rec.note?'\n'+rec.note:''}`)){ closeAllSwipes(); return; }
+    await deleteRecord(rec.id);
+    toast('已刪除');
+  }));
 }
+/* 左滑刪除：只在水平位移明顯大於垂直時才攔截，避免影響正常上下捲動 */
+function closeAllSwipes(){
+  document.querySelectorAll('.rec-swipe.open').forEach(el => el.classList.remove('open'));
+}
+function attachSwipe(root){
+  root.querySelectorAll('.rec-swipe').forEach(wrap => {
+    let x0 = 0, y0 = 0, dx = 0, dragging = false, decided = false;
+    const row = wrap.querySelector('.rec-row');
+
+    wrap.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      x0 = t.clientX; y0 = t.clientY; dx = 0; dragging = true; decided = false;
+      row.style.transition = 'none';
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', (e) => {
+      if (!dragging) return;
+      const t = e.touches[0];
+      const ax = t.clientX - x0, ay = t.clientY - y0;
+      if (!decided){
+        if (Math.abs(ax) < 8 && Math.abs(ay) < 8) return;
+        decided = true;
+        if (Math.abs(ay) > Math.abs(ax)){ dragging = false; row.style.transition=''; return; }  // 垂直捲動，放手
+        closeAllSwipes();
+      }
+      dx = Math.max(-96, Math.min(0, ax));
+      row.style.transform = `translateX(${dx}px)`;
+      if (e.cancelable) e.preventDefault();     // 已判定為水平滑動，阻止頁面捲動
+    }, { passive: false });
+
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      row.style.transition = '';
+      row.style.transform = '';
+      wrap.classList.toggle('open', dx < -48);
+    };
+    wrap.addEventListener('touchend', end);
+    wrap.addEventListener('touchcancel', end);
+  });
+}
+
 function formatDateLabel(d){
   const dt = new Date(d+'T00:00:00');
   const weekdays = ['日','一','二','三','四','五','六'];
@@ -1693,11 +1815,11 @@ function renderWalletDetail(){
       <div class="calc-row sum"><span>身上現金</span><span>${fmt(cashIn - cashOut)}</span></div>
     </div>
     <div class="calc-block">
-      <h4>📅 本月結餘 <small>${m}・含刷卡</small></h4>
+      <h4>📅 本月收支 <small>${m}・含刷卡</small></h4>
       ${row('本月收入', mIn, 'pos')}
       ${row('本月支出・現金', mCash, 'neg')}
       ${row('本月支出・信用卡', mCredit, 'neg')}
-      <div class="calc-row sum"><span>本月結餘</span><span>${fmt(mIn - mCash - mCredit)}</span></div>
+      <div class="calc-row sum"><span>本月收支</span><span>${fmt(mIn - mCash - mCredit)}</span></div>
     </div>
     <div class="calc-block">
       <h4>📊 累計結餘 <small>所有月份・含刷卡</small></h4>
@@ -1833,19 +1955,55 @@ function renderStats(){
     listEl.innerHTML = rows.map(([catId,amt]) => {
       const c = catById(catId) || {icon:'❓',name:'未分類'};
       const pct = total ? (amt/total*100) : 0;
-      return `<div class="cat-stat-row">
+      return `<div class="cat-stat-row" data-cat="${catId}" role="button">
         <span style="font-size:18px;">${c.icon}</span>
         <span style="font-size:13px;flex-shrink:0;width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</span>
         <div class="bar-bg"><div class="bar-fg" style="width:${pct}%;"></div></div>
         <span class="pct">${pct.toFixed(0)}%</span>
         <span class="amt2">${fmt(amt)}</span>
+        <i class="ti ti-chevron-right" style="color:var(--sub2);font-size:15px;"></i>
       </div>`;
     }).join('');
+    listEl.querySelectorAll('.cat-stat-row').forEach(el =>
+      el.addEventListener('click', () => showCatDetail(el.dataset.cat, merge)));
   }
 
   renderPieChart(rows);
   renderTrendChart(exp);
 }
+
+/* 點分類佔比 → 列出該分類在目前期間的所有明細 */
+function showCatDetail(catId, merged){
+  const c = catById(catId) || {icon:'❓', name:'未分類'};
+  const list = recordsForPeriod().filter(isExpense)
+    .filter(r => merged ? rootCat(r.category) === catId : r.category === catId)
+    .sort((a,b)=> b.date.localeCompare(a.date) || b.amount - a.amount);
+  const total = list.reduce((s,r)=>s+r.amount,0);
+  const period = statsPeriod==='day' ? statsDate : statsPeriod==='month' ? statsMonth : statsYear;
+
+  document.getElementById('catdetail-title').innerHTML = `${c.icon} ${catLabel(c)}`;
+  document.getElementById('catdetail-meta').innerHTML =
+    `${period}　共 <b>${list.length}</b> 筆　合計 <b>${fmt(total)}</b>` +
+    (merged && childrenOf(catId).length ? '<br><span style="font-size:11.5px">（已含子分類）</span>' : '');
+
+  document.getElementById('catdetail-list').innerHTML = list.length ? list.map(r => {
+    const rc = catById(r.category);
+    const sub = merged && rc && rc.parent ? `<span class="qty">${rc.icon} ${rc.name}</span>` : '';
+    return `<div class="cd-row" data-id="${r.id}">
+      <div class="cd-mid"><div>${r.date}${sub}</div>${r.note?`<div class="note">${escapeHtml(r.note)}</div>`:''}</div>
+      <div class="cd-amt">${r.payment==='cash'?'💵':'💳'} ${fmt(r.amount)}</div>
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:1.6rem;">此期間沒有紀錄</div>';
+
+  document.querySelectorAll('#catdetail-list .cd-row').forEach(el => el.addEventListener('click', () => {
+    const rec = records.find(r=>r.id===el.dataset.id);
+    if (rec){ document.getElementById('catdetail-overlay').classList.remove('show'); openRecordSheet(rec); }
+  }));
+  document.getElementById('catdetail-overlay').classList.add('show');
+}
+const closeCatDetail = () => document.getElementById('catdetail-overlay').classList.remove('show');
+document.getElementById('catdetail-close').addEventListener('click', closeCatDetail);
+document.getElementById('catdetail-overlay').addEventListener('click', (e)=>{ if(e.target.id==='catdetail-overlay') closeCatDetail(); });
 
 const PALETTE = ['#1a6fe8','#2e7d32','#e65100','#c62828','#6a1b9a','#00838f','#ad1457','#f9a825','#546e7a','#5d4037','#00695c'];
 function renderPieChart(rows){
