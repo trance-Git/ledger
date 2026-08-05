@@ -109,6 +109,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .wallet-sub div{flex:1;min-width:0;}
 .wallet-sub span{display:block;font-size:11px;opacity:.8;}
 .wallet-sub b{font-size:14px;}
+.lbl-note{font-size:9.5px;opacity:.7;font-weight:400;background:rgba(255,255,255,.18);padding:1px 5px;border-radius:4px;white-space:nowrap;}
+.calc-block{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+.calc-block h4{font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;}
+.calc-block h4 small{font-size:11px;color:var(--sub2);font-weight:400;}
+.calc-row{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;color:var(--sub);}
+.calc-row.sum{border-top:1px solid var(--border);margin-top:6px;padding-top:7px;color:var(--text);font-weight:700;font-size:14px;}
+.calc-row .pos{color:var(--green);}
+.calc-row .neg{color:var(--red);}
 .rec-row .amt.income{color:var(--green);}
 .seg button.active[data-type=expense]{background:var(--red-bg);color:var(--red);border-color:var(--red);}
 .seg button.active[data-type=income]{background:var(--green-bg);color:var(--green);border-color:var(--green);}
@@ -242,13 +250,16 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
   <div id="page-list" class="page">
     <div class="wallet-card">
       <div class="wallet-top">
-        <div><div class="lbl">💵 身上現金</div><div class="val" id="w-cash">NT$0</div></div>
-        <button class="btn-link" id="w-adjust">校正</button>
+        <div><div class="lbl">💵 身上現金 <span class="lbl-note">累計・不含刷卡</span></div><div class="val" id="w-cash">NT$0</div></div>
+        <div style="display:flex;gap:12px;flex-shrink:0;">
+          <button class="btn-link" id="w-detail">明細</button>
+          <button class="btn-link" id="w-adjust">校正</button>
+        </div>
       </div>
       <div class="wallet-sub">
         <div><span>今日支出</span><b id="w-today">NT$0</b></div>
         <div><span>本月收入</span><b id="w-income-sum">NT$0</b></div>
-        <div><span>本月結餘</span><b id="w-balance">NT$0</b></div>
+        <div><span>本月結餘 <span class="lbl-note">含刷卡</span></span><b id="w-balance">NT$0</b></div>
       </div>
     </div>
     <div class="month-nav">
@@ -464,6 +475,17 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
   </div>
 </div>
 
+<!-- 餘額計算明細 -->
+<div class="overlay" id="wallet-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>餘額怎麼算的</h2><button id="wallet-close">&times;</button></div>
+    <div id="wallet-detail"></div>
+    <p class="help">「身上現金」只算現金且跨月累積，所以跟只看單月、又含刷卡的「本月結餘」不會一樣。本月結餘每月從零開始，不會帶到下個月；會累積的是身上現金。</p>
+    <div class="form-actions"><button class="btn btn-primary btn-block" id="wallet-ok">了解</button></div>
+  </div>
+</div>
+
 <!-- CSV import preview -->
 <div class="overlay" id="csv-overlay">
   <div class="sheet">
@@ -554,7 +576,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -1648,6 +1670,51 @@ function setMonthAll(on){
   document.getElementById('m-all').classList.toggle('active', on);
   document.getElementById('f-month').disabled = on;
 }
+/* 把兩個數字的算式攤開，說明為何「身上現金」與「本月結餘」不同 */
+function renderWalletDetail(){
+  const m = todayStr().slice(0,7);
+  const sum = (f) => records.filter(f).reduce((s,r)=>s+r.amount,0);
+  const cashIn  = sum(r => r.payment==='cash' && !isExpense(r));
+  const cashOut = sum(r => r.payment==='cash' &&  isExpense(r));
+  const mIn     = sum(r => r.date.startsWith(m) && !isExpense(r));
+  const mCash   = sum(r => r.date.startsWith(m) &&  isExpense(r) && r.payment==='cash');
+  const mCredit = sum(r => r.date.startsWith(m) &&  isExpense(r) && r.payment==='credit');
+  const allIn   = sum(r => !isExpense(r));
+  const allOut  = sum(r =>  isExpense(r));
+
+  const row = (label, val, cls) =>
+    `<div class="calc-row"><span>${label}</span><span class="${cls||''}">${cls==='pos'?'+':cls==='neg'?'−':''}${fmt(Math.abs(val))}</span></div>`;
+
+  document.getElementById('wallet-detail').innerHTML = `
+    <div class="calc-block">
+      <h4>💵 身上現金 <small>只算現金・跨月累積</small></h4>
+      ${row('現金收入（所有月份）', cashIn, 'pos')}
+      ${row('現金支出（所有月份）', cashOut, 'neg')}
+      <div class="calc-row sum"><span>身上現金</span><span>${fmt(cashIn - cashOut)}</span></div>
+    </div>
+    <div class="calc-block">
+      <h4>📅 本月結餘 <small>${m}・含刷卡</small></h4>
+      ${row('本月收入', mIn, 'pos')}
+      ${row('本月支出・現金', mCash, 'neg')}
+      ${row('本月支出・信用卡', mCredit, 'neg')}
+      <div class="calc-row sum"><span>本月結餘</span><span>${fmt(mIn - mCash - mCredit)}</span></div>
+    </div>
+    <div class="calc-block">
+      <h4>📊 累計結餘 <small>所有月份・含刷卡</small></h4>
+      ${row('總收入', allIn, 'pos')}
+      ${row('總支出', allOut, 'neg')}
+      <div class="calc-row sum"><span>累計結餘</span><span>${fmt(allIn - allOut)}</span></div>
+    </div>`;
+}
+document.getElementById('w-detail').addEventListener('click', () => {
+  renderWalletDetail();
+  document.getElementById('wallet-overlay').classList.add('show');
+});
+const closeWallet = () => document.getElementById('wallet-overlay').classList.remove('show');
+document.getElementById('wallet-close').addEventListener('click', closeWallet);
+document.getElementById('wallet-ok').addEventListener('click', closeWallet);
+document.getElementById('wallet-overlay').addEventListener('click', (e)=>{ if(e.target.id==='wallet-overlay') closeWallet(); });
+
 /* 校正現金：直接輸入實際金額，用差額補一筆調整紀錄，
    這樣錢包餘額永遠是「所有現金收支的結果」，不會出現對不上的隱藏數字。 */
 document.getElementById('w-adjust').addEventListener('click', async () => {
