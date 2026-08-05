@@ -155,7 +155,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ---- modal ---- */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:100;}
 .overlay.show{display:flex;}
-.sheet{background:var(--bg);width:100%;max-width:640px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:1.2rem 1.1rem calc(1.4rem + env(safe-area-inset-bottom));}
+/* min-height:0 讓 flex 子項可以縮小，否則 overflow-y 不會生效；
+   overscroll-behavior:contain 阻止捲動傳遞到後方頁面（iOS 獨立視窗模式會搶走觸控）；
+   dvh 讓高度跟著實際可視區域，避免被瀏覽器工具列或安全區裁掉。 */
+.sheet{background:var(--bg);width:100%;max-width:640px;
+  max-height:92vh;max-height:92dvh;min-height:0;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  border-radius:18px 18px 0 0;padding:1.2rem 1.1rem calc(1.4rem + env(safe-area-inset-bottom));}
+/* 覆蓋層開啟時鎖住背景，避免觸控落到後方頁面 */
+body.modal-open{position:fixed;width:100%;overflow:hidden;}
 .sheet-handle{width:36px;height:4px;background:var(--border);border-radius:3px;margin:0 auto 14px;}
 .sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
 .sheet-head h2{font-size:16px;}
@@ -493,7 +501,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.9';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmt = n => 'NT$' + Math.round(n||0).toLocaleString('zh-TW');
@@ -2043,6 +2051,10 @@ function renderCsvSheet(fileName){
       const cc = catById(c); return `${cc?cc.icon+' '+cc.name:'?'} ${fmt(a)}`;
     }).join('　') || '（沒有可匯入的資料）';
 
+  const saveBtn = document.getElementById('csv-save');
+  saveBtn.disabled = !d.fresh.length;
+  saveBtn.textContent = d.fresh.length ? `確認匯入 ${recCount} 筆` : '沒有新資料可匯入';
+
   document.querySelectorAll('.csv-pay').forEach(el => el.addEventListener('click', () => {
     const inv = d.fresh[+el.dataset.idx];
     inv.payment = inv.payment === 'cash' ? 'credit' : 'cash';
@@ -2130,6 +2142,33 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
     toast('匯入失敗，請確認檔案格式');
   }
 });
+
+/* =========================================================
+   覆蓋層開啟時鎖住背景捲動
+   iOS 加入主畫面（standalone）時，position:fixed 覆蓋層內的捲動區塊
+   會被後方 body 搶走觸控，導致面板滑不動。單靠 overflow:hidden 在 iOS
+   無效，必須把 body 固定並記住捲動位置，關閉時再還原。
+   用 MutationObserver 監看 class 變化，避免遺漏任何開關路徑。
+   ========================================================= */
+let bodyLockY = 0;
+function syncBodyLock(){
+  const open = !!document.querySelector('.overlay.show, .scanner.show');
+  const locked = document.body.classList.contains('modal-open');
+  if (open && !locked){
+    bodyLockY = window.scrollY || window.pageYOffset || 0;
+    document.body.style.top = `-${bodyLockY}px`;
+    document.body.classList.add('modal-open');
+  } else if (!open && locked){
+    document.body.classList.remove('modal-open');
+    document.body.style.top = '';
+    window.scrollTo(0, bodyLockY);
+  }
+}
+{
+  const mo = new MutationObserver(syncBodyLock);
+  document.querySelectorAll('.overlay, .scanner').forEach(el =>
+    mo.observe(el, { attributes:true, attributeFilter:['class'] }));
+}
 
 /* =========================================================
    Bottom nav / page switching
