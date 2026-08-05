@@ -69,6 +69,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat-chip.active{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);}
 .cat-chip{position:relative;}
 .cat-chip .has-sub{position:absolute;top:5px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--blue);opacity:.55;}
+.cat-chip.add-cat-chip{border-style:dashed;color:var(--sub);}
+.cat-chip.add-cat-chip .ico{font-weight:700;}
 .cat-chip.sub{padding:8px 2px;font-size:11.5px;}
 .cat-chip.sub .ico{font-size:18px;}
 .cat-manage-row.is-sub{padding-left:22px;}
@@ -158,6 +160,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cd-mid .qty{margin-left:6px;font-size:11px;color:var(--sub2);}
 .cd-amt{font-size:14px;font-weight:600;flex-shrink:0;}
 .learn-row{margin-top:8px;font-size:12.5px;color:var(--sub);}
+.pay-filter{margin-bottom:12px;}
+.pay-filter button{padding:9px;font-size:13px;}
+.pay-filter button.active[data-pay=""]{background:var(--blue-bg);color:var(--blue);border-color:var(--blue);}
+.cat-stat-row.is-sub{padding-left:16px;}
+.cat-stat-row.is-sub .bar-bg{height:5px;}
+.cat-stat-row.is-parent{font-weight:600;}
 .merge-toggle{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:400;color:var(--sub);text-transform:none;letter-spacing:0;cursor:pointer;}
 .merge-toggle input{width:15px;height:15px;}
 
@@ -295,6 +303,11 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button data-period="year">年</button>
     </div>
     <div class="month-nav" id="period-picker-wrap"></div>
+    <div class="seg pay-filter" id="stats-pay">
+      <button data-pay="" class="active">總額</button>
+      <button data-pay="cash">💵 現金</button>
+      <button data-pay="credit">💳 刷卡</button>
+    </div>
     <div class="summary-grid">
       <div class="summary-card total"><div class="lbl">總支出</div><div class="val" id="s-total">NT$0</div></div>
       <div class="summary-card"><div class="lbl">💵 現金</div><div class="val" id="s-cash">NT$0</div></div>
@@ -308,8 +321,8 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     </div>
     <div class="card">
       <div class="section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;">
-        <span>分類佔比</span>
-        <label class="merge-toggle"><input type="checkbox" id="stats-merge"> 合併子分類</label>
+        <span>分類佔比<span id="pie-scope" style="font-weight:400;color:var(--sub2);"></span></span>
+        <label class="merge-toggle"><input type="checkbox" id="stats-merge"> 只看主分類</label>
       </div>
       <div class="chart-wrap" id="pie-wrap"><canvas id="pie-chart"></canvas></div>
       <div id="cat-stat-list"></div>
@@ -601,7 +614,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.3';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -1199,8 +1212,11 @@ function renderCatGrid(){
   const activeTop = selectedCat ? rootCat(selectedCat) : null;
   grid.innerHTML = top.map(c =>
     `<div class="cat-chip${c.id===activeTop?' active':''}" data-cat="${c.id}">
-       <span class="ico">${c.icon}</span>${c.name}${childrenOf(c.id).length?'<span class="has-sub"></span>':''}</div>`).join('');
-  grid.querySelectorAll('.cat-chip').forEach(el => el.addEventListener('click', () => {
+       <span class="ico">${c.icon}</span>${c.name}${childrenOf(c.id).length?'<span class="has-sub"></span>':''}</div>`).join('')
+    + `<div class="cat-chip add-cat-chip" id="cat-add-chip"><span class="ico">＋</span>新增</div>`;
+
+  grid.querySelector('#cat-add-chip').addEventListener('click', () => openCatSheet(null, { pickAfterSave: true }));
+  grid.querySelectorAll('.cat-chip:not(.add-cat-chip)').forEach(el => el.addEventListener('click', () => {
     catTouched = true;
     document.getElementById('auto-hint').style.display = 'none';
     selectedCat = el.dataset.cat;
@@ -1221,8 +1237,12 @@ function renderSubCatGrid(){
   wrap.style.display = 'block';
   grid.innerHTML = kids.map(c =>
     `<div class="cat-chip sub${c.id===selectedCat?' active':''}" data-cat="${c.id}">
-       <span class="ico">${c.icon}</span>${c.name}</div>`).join('');
-  grid.querySelectorAll('.cat-chip').forEach(el => el.addEventListener('click', () => {
+       <span class="ico">${c.icon}</span>${c.name}</div>`).join('')
+    + `<div class="cat-chip sub add-cat-chip" id="subcat-add-chip"><span class="ico">＋</span>新增</div>`;
+
+  grid.querySelector('#subcat-add-chip').addEventListener('click',
+    () => openCatSheet(null, { pickAfterSave: true, parent }));
+  grid.querySelectorAll('.cat-chip:not(.add-cat-chip)').forEach(el => el.addEventListener('click', () => {
     // 再點一次已選的子分類 → 取消，回到只記主分類
     selectedCat = (selectedCat === el.dataset.cat) ? parent : el.dataset.cat;
     const cat = catById(selectedCat);
@@ -1610,9 +1630,12 @@ function parseAmountFromText(text){
 /* =========================================================
    Category add/edit sheet
    ========================================================= */
-let editingCatId = null;
-function openCatSheet(id){
+let editingCatId = null, catSheetOpts = {};
+/* opts.pickAfterSave：從新增支出畫面按「＋新增」進來，存檔後要直接選用該分類
+   opts.parent：從子分類列按「＋新增」進來，預設歸屬到該主分類 */
+function openCatSheet(id, opts){
   editingCatId = id || null;
+  catSheetOpts = opts || {};
   const cat = id ? catById(id) : null;
   document.getElementById('cat-sheet-title').textContent = cat ? '編輯分類' : '新增分類';
   document.getElementById('c-icon').value = cat ? cat.icon : '';
@@ -1623,7 +1646,7 @@ function openCatSheet(id){
   psel.innerHTML = '<option value="">主分類（不歸屬）</option>' +
     (hasKids ? '' : topCategories().filter(c => !cat || c.id !== cat.id)
       .map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join(''));
-  psel.value = cat ? (cat.parent || '') : '';
+  psel.value = cat ? (cat.parent || '') : (catSheetOpts.parent || '');
   psel.disabled = hasKids;
   document.getElementById('c-fixed').checked = cat ? !!cat.fixed : false;
   document.getElementById('c-delete').style.display = cat ? 'inline-flex' : 'none';
@@ -1651,6 +1674,15 @@ document.getElementById('c-save').addEventListener('click', async () => {
                 parent, order };
   await saveCategory(cat);
   document.getElementById('cat-overlay').classList.remove('show');
+  // 從新增支出畫面建立的分類，直接選起來，不用再回去點一次
+  if (catSheetOpts.pickAfterSave){
+    selectedCat = cat.id;
+    catTouched = true;
+    document.getElementById('r-fixed').checked = !!cat.fixed;
+    renderCatGrid();
+    refreshLearnRow();
+  }
+  catSheetOpts = {};
   toast('已儲存分類');
 });
 document.getElementById('c-delete').addEventListener('click', async () => {
@@ -1879,6 +1911,11 @@ let statsYear = String(new Date().getFullYear());
 let pieChart = null, trendChart = null;
 
 document.getElementById('stats-merge').addEventListener('change', renderStats);
+document.getElementById('stats-pay').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#stats-pay button').forEach(x => x.classList.toggle('active', x === b));
+  renderStats();
+});
 document.querySelectorAll('.period-tabs button').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('.period-tabs button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
@@ -1940,42 +1977,71 @@ function renderStats(){
   document.getElementById('s-fixed').textContent = fmt(fixed);
   document.getElementById('s-variable').textContent = fmt(variable);
 
-  // category breakdown
+  // 分類佔比：可依付款方式過濾，並把子分類收在主分類底下顯示
+  const payFilter = document.querySelector('#stats-pay button.active').dataset.pay;
+  const scoped = payFilter ? exp.filter(r => r.payment === payFilter) : exp;
+  const scopedTotal = scoped.reduce((s,r)=>s+r.amount,0);
+  document.getElementById('pie-scope').textContent =
+    payFilter === 'cash' ? '（現金）' : payFilter === 'credit' ? '（信用卡）' : '';
+
   const merge = document.getElementById('stats-merge').checked;
-  const byCat = {};
-  for (const r of exp){
-    const k = merge ? rootCat(r.category) : r.category;
-    byCat[k] = (byCat[k]||0) + r.amount;
+  const byLeaf = {};
+  for (const r of scoped) byLeaf[r.category] = (byLeaf[r.category]||0) + r.amount;
+
+  // 依主分類分組：group.amount 為含子分類的合計，children 為各子分類明細
+  const groups = {};
+  for (const [catId, amt] of Object.entries(byLeaf)){
+    const root = rootCat(catId);
+    const g = groups[root] || (groups[root] = { id: root, amount: 0, own: 0, children: [] });
+    g.amount += amt;
+    if (catId === root) g.own += amt; else g.children.push([catId, amt]);
   }
-  const rows = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const ordered = Object.values(groups).sort((a,b)=>b.amount-a.amount);
+  ordered.forEach(g => g.children.sort((a,b)=>b[1]-a[1]));
+
+  // 圓餅圖：合併時看主分類，否則看最細的一層
+  const rows = merge
+    ? ordered.map(g => [g.id, g.amount])
+    : Object.entries(byLeaf).sort((a,b)=>b[1]-a[1]);
+
+  const pct = a => scopedTotal ? (a/scopedTotal*100) : 0;
+  const rowHtml = (catId, amt, cls) => {
+    const c = catById(catId) || {icon:'❓',name:'未分類'};
+    const p = pct(amt);
+    return `<div class="cat-stat-row ${cls||''}" data-cat="${catId}" data-merged="${cls==='is-parent'?1:0}" role="button">
+      <span style="font-size:${cls==='is-sub'?'15':'18'}px;">${c.icon}</span>
+      <span style="font-size:${cls==='is-sub'?'12':'13'}px;flex-shrink:0;width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</span>
+      <div class="bar-bg"><div class="bar-fg" style="width:${p}%;"></div></div>
+      <span class="pct">${p.toFixed(0)}%</span>
+      <span class="amt2">${fmt(amt)}</span>
+      <i class="ti ti-chevron-right" style="color:var(--sub2);font-size:15px;"></i>
+    </div>`;
+  };
+
   const listEl = document.getElementById('cat-stat-list');
-  if (!rows.length){
+  if (!ordered.length){
     listEl.innerHTML = '<div class="empty" style="padding:1.4rem;">此期間尚無資料</div>';
   } else {
-    listEl.innerHTML = rows.map(([catId,amt]) => {
-      const c = catById(catId) || {icon:'❓',name:'未分類'};
-      const pct = total ? (amt/total*100) : 0;
-      return `<div class="cat-stat-row" data-cat="${catId}" role="button">
-        <span style="font-size:18px;">${c.icon}</span>
-        <span style="font-size:13px;flex-shrink:0;width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</span>
-        <div class="bar-bg"><div class="bar-fg" style="width:${pct}%;"></div></div>
-        <span class="pct">${pct.toFixed(0)}%</span>
-        <span class="amt2">${fmt(amt)}</span>
-        <i class="ti ti-chevron-right" style="color:var(--sub2);font-size:15px;"></i>
-      </div>`;
+    listEl.innerHTML = ordered.map(g => {
+      // 合併模式只列主分類；否則主分類顯示「含子分類的合計」，下方再列各子分類
+      if (merge || !g.children.length) return rowHtml(g.id, g.amount, g.children.length ? 'is-parent' : '');
+      return rowHtml(g.id, g.amount, 'is-parent')
+        + (g.own ? rowHtml(g.id, g.own, 'is-sub') : '')
+        + g.children.map(([cid, amt]) => rowHtml(cid, amt, 'is-sub')).join('');
     }).join('');
     listEl.querySelectorAll('.cat-stat-row').forEach(el =>
-      el.addEventListener('click', () => showCatDetail(el.dataset.cat, merge)));
+      el.addEventListener('click', () => showCatDetail(el.dataset.cat, el.dataset.merged === '1', payFilter)));
   }
 
-  renderPieChart(rows);
-  renderTrendChart(exp);
+  renderPieChart(rows, scopedTotal);
+  renderTrendChart(scoped);
 }
 
 /* 點分類佔比 → 列出該分類在目前期間的所有明細 */
-function showCatDetail(catId, merged){
+function showCatDetail(catId, merged, payFilter){
   const c = catById(catId) || {icon:'❓', name:'未分類'};
   const list = recordsForPeriod().filter(isExpense)
+    .filter(r => !payFilter || r.payment === payFilter)
     .filter(r => merged ? rootCat(r.category) === catId : r.category === catId)
     .sort((a,b)=> b.date.localeCompare(a.date) || b.amount - a.amount);
   const total = list.reduce((s,r)=>s+r.amount,0);
@@ -1983,7 +2049,7 @@ function showCatDetail(catId, merged){
 
   document.getElementById('catdetail-title').innerHTML = `${c.icon} ${catLabel(c)}`;
   document.getElementById('catdetail-meta').innerHTML =
-    `${period}　共 <b>${list.length}</b> 筆　合計 <b>${fmt(total)}</b>` +
+    `${period}${payFilter==='cash'?'・現金':payFilter==='credit'?'・信用卡':''}　共 <b>${list.length}</b> 筆　合計 <b>${fmt(total)}</b>` +
     (merged && childrenOf(catId).length ? '<br><span style="font-size:11.5px">（已含子分類）</span>' : '');
 
   document.getElementById('catdetail-list').innerHTML = list.length ? list.map(r => {
@@ -2006,7 +2072,7 @@ document.getElementById('catdetail-close').addEventListener('click', closeCatDet
 document.getElementById('catdetail-overlay').addEventListener('click', (e)=>{ if(e.target.id==='catdetail-overlay') closeCatDetail(); });
 
 const PALETTE = ['#1a6fe8','#2e7d32','#e65100','#c62828','#6a1b9a','#00838f','#ad1457','#f9a825','#546e7a','#5d4037','#00695c'];
-function renderPieChart(rows){
+function renderPieChart(rows, scopedTotal){
   const ctx = document.getElementById('pie-chart');
   const labels = rows.map(([id]) => { const c=catById(id); return c ? c.icon+' '+c.name : '未分類'; });
   const data = rows.map(([,amt]) => amt);
@@ -2015,10 +2081,20 @@ function renderPieChart(rows){
   pieChart = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data, backgroundColor: PALETTE }] },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{size:11} } } } }
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{size:11} } },
+        tooltip:{ callbacks:{ label: (c) => {
+          const v = c.parsed;
+          const p = scopedTotal ? (v/scopedTotal*100).toFixed(1) : 0;
+          return ` ${c.label}　${fmt(v)}（${p}%）`;
+        } } } } }
   });
 }
 
+const trendScopeLabel = () => {
+  const p = document.querySelector('#stats-pay button.active').dataset.pay;
+  return p === 'cash' ? '（現金）' : p === 'credit' ? '（信用卡）' : '';
+};
 function renderTrendChart(periodList){
   const card = document.getElementById('trend-card');
   const title = document.getElementById('trend-title');
@@ -2028,14 +2104,14 @@ function renderTrendChart(periodList){
   card.style.display='block';
   let labels, sums;
   if (statsPeriod === 'month'){
-    title.textContent = '每日支出趨勢';
+    title.textContent = '每日支出趨勢' + trendScopeLabel();
     const [y,m] = statsMonth.split('-').map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     labels = Array.from({length:daysInMonth}, (_,i)=>String(i+1));
     sums = new Array(daysInMonth).fill(0);
     for (const r of periodList){ const d = parseInt(r.date.slice(8,10),10); sums[d-1]+=r.amount; }
   } else {
-    title.textContent = '每月支出趨勢';
+    title.textContent = '每月支出趨勢' + trendScopeLabel();
     labels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
     sums = new Array(12).fill(0);
     for (const r of periodList){ const mo = parseInt(r.date.slice(5,7),10); sums[mo-1]+=r.amount; }
