@@ -244,6 +244,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
 .recur-row .ramt{font-size:14px;font-weight:700;flex-shrink:0;}
 .recur-total{text-align:right;font-size:12px;color:var(--sub);padding-top:10px;margin-top:4px;border-top:1px dashed var(--border);}
 .recur-total b{color:var(--text);font-size:14px;}
+.prize-tag{display:inline-block;font-size:10.5px;background:var(--orange-bg);color:var(--orange);padding:2px 8px;border-radius:5px;margin-bottom:3px;}
 .next-run{font-size:10px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:5px;margin-left:6px;font-weight:400;white-space:nowrap;}
 
 /* ---- rules ---- */
@@ -372,6 +373,23 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button class="btn btn-ghost btn-block" id="add-recurring-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增固定支出</button>
     </div>
 
+    <div class="section-title collapsible" data-sec="prize"><span>統一發票對獎<span class="sec-count" id="sec-count-prize"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="prize">
+      <p class="help" style="margin-top:0;">輸入該期的中獎號碼，會自動比對所有掃描或匯入進來的發票號碼。手動記帳的紀錄沒有發票號碼，不會列入比對。</p>
+      <div class="field"><label>期別</label><select id="pz-period"></select></div>
+      <div class="field"><label>特別獎（1000萬）</label><input type="text" id="pz-special" inputmode="numeric" maxlength="8" placeholder="8 碼"></div>
+      <div class="field"><label>特獎（200萬）</label><input type="text" id="pz-grand" inputmode="numeric" maxlength="8" placeholder="8 碼"></div>
+      <div class="field"><label>頭獎（20萬，共 3 組）</label>
+        <input type="text" id="pz-first1" inputmode="numeric" maxlength="8" placeholder="8 碼" style="margin-bottom:7px;">
+        <input type="text" id="pz-first2" inputmode="numeric" maxlength="8" placeholder="8 碼" style="margin-bottom:7px;">
+        <input type="text" id="pz-first3" inputmode="numeric" maxlength="8" placeholder="8 碼">
+      </div>
+      <div class="field"><label>增開六獎（200 元，末 3 碼，可多組用逗號分隔）</label>
+        <input type="text" id="pz-extra" inputmode="numeric" placeholder="例如 531,808"></div>
+      <button class="btn btn-primary btn-block" id="pz-check"><i class="ti ti-ticket"></i> 開始對獎</button>
+      <div id="pz-status" class="ei-status"></div>
+    </div>
+
     <div class="section-title collapsible" data-sec="rules"><span>自動分類規則<span class="sec-count" id="sec-count-rules"></span></span><i class="ti ti-chevron-down"></i></div>
     <div class="card" data-sec-body="rules">
       <p class="help" style="margin-top:0;">掃描發票或輸入品項時，會依關鍵字自動判斷分類。由上往下比對，第一個命中的規則生效。</p>
@@ -485,6 +503,18 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button class="btn btn-danger" id="c-delete" style="display:none;"><i class="ti ti-trash"></i></button>
       <button class="btn btn-primary btn-block" id="c-save">儲存</button>
     </div>
+  </div>
+</div>
+
+<!-- 對獎結果 -->
+<div class="overlay" id="prize-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>對獎結果</h2><button id="prize-close">&times;</button></div>
+    <div id="prize-meta" class="inv-meta"></div>
+    <div id="prize-list" style="margin-top:12px;"></div>
+    <p class="help">獎金以財政部公告為準，本結果僅供初步核對。中獎發票請保留正本領獎。</p>
+    <div class="form-actions"><button class="btn btn-primary btn-block" id="prize-ok">關閉</button></div>
   </div>
 </div>
 
@@ -673,7 +703,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.6';
+const APP_VERSION = '3.7';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -904,6 +934,12 @@ async function loadLocal(){
     rules = [...seeds, ...custom];
   }
   if (seeded < SEED_VERSION) localStorage.setItem('ledger-seed', String(SEED_VERSION));
+
+  // 早期掃描 QR 的紀錄把發票號碼存成 invNo，與其他來源的 invNum 不一致，
+  // 導致去重與對獎會漏掉這些紀錄，一次補正過來。
+  for (const r of records){
+    if (!r.invNum && r.invNo){ r.invNum = r.invNo; delete r.invNo; await idbPut('records', r); }
+  }
 
   sortCategories();
   sortRules();
@@ -1312,7 +1348,7 @@ document.getElementById('inv-save').addEventListener('click', async () => {
       id: uid(), date: d.date, amount: items.reduce((s,i)=>s+i.amount,0),
       category: catId, payment: d.payment, fixed: cat ? !!cat.fixed : false,
       note: items.map(i=>i.name + (i.qty>1?`×${i.qty}`:'')).join('、'),
-      photo: null, invNo: d.invNo || null, createdAt: stamp,
+      photo: null, invNum: d.invNo || null, createdAt: stamp,
     });
   }
   document.getElementById('invoice-overlay').classList.remove('show');
@@ -1398,6 +1434,139 @@ function renderCatManageList(){
     </div>`).join('');
   wrap.querySelectorAll('.edit-cat').forEach(b => b.addEventListener('click', () => openCatSheet(b.dataset.id)));
 }
+
+/* =========================================================
+   統一發票對獎
+   中獎號碼需要 appID 才能從財政部 API 取得（個人申請不到），
+   所以改由使用者輸入，每兩個月一次；號碼會依期別記在本機，不用重打。
+   ========================================================= */
+const PRIZE_TIERS = [
+  [7, '二獎', 40000], [6, '三獎', 10000], [5, '四獎', 4000],
+  [4, '五獎', 1000],  [3, '六獎', 200],
+];
+
+/* 統一發票號碼為 2 英文字母 + 8 位數字，比對時只取數字部分 */
+function checkPrize(invNum, p){
+  const d = String(invNum || '').replace(/\D/g, '');
+  if (d.length !== 8) return null;
+  if (p.special && d === p.special) return { name:'特別獎', amount:10000000 };
+  if (p.grand   && d === p.grand)   return { name:'特獎',   amount:2000000 };
+  for (const f of p.first) if (f && d === f) return { name:'頭獎', amount:200000 };
+  // 高獎項優先：先把所有頭獎號碼比完某個位數，再往下一個位數
+  for (const [n, name, amount] of PRIZE_TIERS)
+    for (const f of p.first)
+      if (f && f.length === 8 && d.slice(-n) === f.slice(-n)) return { name, amount };
+  for (const e of p.extra) if (e && d.slice(-3) === e) return { name:'增開六獎', amount:200 };
+  return null;
+}
+
+// 統一發票為雙月一期：1-2月、3-4月…
+function prizePeriods(){
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++){
+    const d = new Date(now.getFullYear(), now.getMonth() - i * 2, 1);
+    const y = d.getFullYear(), m = d.getMonth() + 1;
+    const start = m % 2 === 0 ? m - 1 : m;                 // 該期的第一個月
+    const key = `${y}-${String(start).padStart(2,'0')}`;
+    if (!out.some(o => o.key === key))
+      out.push({ key, label: `${y} 年 ${start}-${start+1} 月`, y, start });
+  }
+  return out;
+}
+
+const prizeStoreKey = k => 'ledger-prize-' + k;
+function loadPrizeInputs(){
+  const key = document.getElementById('pz-period').value;
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(prizeStoreKey(key)) || '{}'); } catch(e){}
+  document.getElementById('pz-special').value = p.special || '';
+  document.getElementById('pz-grand').value   = p.grand   || '';
+  document.getElementById('pz-first1').value  = (p.first||[])[0] || '';
+  document.getElementById('pz-first2').value  = (p.first||[])[1] || '';
+  document.getElementById('pz-first3').value  = (p.first||[])[2] || '';
+  document.getElementById('pz-extra').value   = (p.extra||[]).join(',');
+}
+function readPrizeInputs(){
+  const dig = id => document.getElementById(id).value.replace(/\D/g,'').slice(-8);
+  return {
+    special: dig('pz-special'), grand: dig('pz-grand'),
+    first: ['pz-first1','pz-first2','pz-first3'].map(dig).filter(Boolean),
+    extra: document.getElementById('pz-extra').value.split(/[,，、\s]+/)
+             .map(s=>s.replace(/\D/g,'').slice(-3)).filter(x=>x.length===3),
+  };
+}
+
+function initPrizeUI(){
+  const sel = document.getElementById('pz-period');
+  sel.innerHTML = prizePeriods().map(p=>`<option value="${p.key}">${p.label}</option>`).join('');
+  loadPrizeInputs();
+}
+document.getElementById('pz-period').addEventListener('change', loadPrizeInputs);
+
+document.getElementById('pz-check').addEventListener('click', () => {
+  const key = document.getElementById('pz-period').value;
+  const p = readPrizeInputs();
+  const st = document.getElementById('pz-status');
+  if (!p.first.length && !p.special && !p.grand){
+    st.className = 'ei-status show err';
+    st.textContent = '請至少輸入一組中獎號碼';
+    return;
+  }
+  localStorage.setItem(prizeStoreKey(key), JSON.stringify(p));
+
+  // 只比對該期兩個月內、且有發票號碼的紀錄；同一張發票可能拆成多筆，須去重
+  const [y, m] = key.split('-').map(Number);
+  const months = [`${y}-${String(m).padStart(2,'0')}`, `${y}-${String(m+1).padStart(2,'0')}`];
+  const seen = new Map();
+  for (const r of records){
+    if (!r.invNum || !isExpense(r)) continue;
+    if (!months.some(mm => r.date.startsWith(mm))) continue;
+    if (!seen.has(r.invNum)) seen.set(r.invNum, { invNum: r.invNum, date: r.date, amount: 0, notes: [] });
+    const g = seen.get(r.invNum);
+    g.amount += r.amount;
+    if (r.note) g.notes.push(r.note);
+  }
+  const invoices = [...seen.values()];
+  const wins = [];
+  for (const inv of invoices){
+    const w = checkPrize(inv.invNum, p);
+    if (w) wins.push({ ...inv, ...w });
+  }
+  wins.sort((a,b)=>b.amount-a.amount);
+
+  st.className = 'ei-status show ' + (wins.length ? 'ok' : '');
+  st.innerHTML = invoices.length
+    ? (wins.length
+        ? `🎉 比對 ${invoices.length} 張，中獎 <b>${wins.length}</b> 張`
+        : `比對 ${invoices.length} 張，這期沒有中獎`)
+    : '這期沒有含發票號碼的紀錄可比對';
+  renderPrizeResult(key, invoices.length, wins);
+});
+
+function renderPrizeResult(key, checked, wins){
+  const total = wins.reduce((s,w)=>s+w.amount,0);
+  const label = prizePeriods().find(p=>p.key===key)?.label || key;
+  document.getElementById('prize-meta').innerHTML =
+    `${label}　比對 <b>${checked}</b> 張發票<br>` +
+    (wins.length ? `中獎 <b>${wins.length}</b> 張，獎金合計 <b>${fmt(total)}</b>` : '沒有中獎');
+  document.getElementById('prize-list').innerHTML = wins.length ? wins.map(w => `
+    <div class="cd-row" style="cursor:default;">
+      <div class="cd-mid">
+        <div><b style="font-size:14px;color:var(--text)">${escapeHtml(w.invNum)}</b>　${w.date}</div>
+        ${w.notes.length?`<div class="note">${escapeHtml(w.notes.join('、'))}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div class="prize-tag">${w.name}</div>
+        <div class="cd-amt" style="color:var(--green)">${fmt(w.amount)}</div>
+      </div>
+    </div>`).join('') : '<div class="empty" style="padding:1.6rem;">這期沒有中獎</div>';
+  document.getElementById('prize-overlay').classList.add('show');
+}
+const closePrize = () => document.getElementById('prize-overlay').classList.remove('show');
+document.getElementById('prize-close').addEventListener('click', closePrize);
+document.getElementById('prize-ok').addEventListener('click', closePrize);
+document.getElementById('prize-overlay').addEventListener('click', (e)=>{ if(e.target.id==='prize-overlay') closePrize(); });
 
 /* =========================================================
    每月固定支出管理
@@ -2934,7 +3103,7 @@ function syncBodyLock(){
    設定頁區塊收合
    分類與規則清單很長，預設收起來；收合狀態記在 localStorage。
    ========================================================= */
-const SEC_DEFAULT_CLOSED = ['cats','rules','import','wipe'];
+const SEC_DEFAULT_CLOSED = ['cats','rules','import','wipe','prize'];
 function secClosed(){
   try { return JSON.parse(localStorage.getItem('ledger-sections') || 'null') || SEC_DEFAULT_CLOSED; }
   catch(e){ return SEC_DEFAULT_CLOSED; }
@@ -2965,8 +3134,11 @@ function renderSectionCounts(){
   set('rules', `（${rules.length}）`);
   set('recur', recurring.length ? `（${recurring.length}）` : '');
   set('wipe', `（${records.length} 筆紀錄）`);
+  const withInv = records.filter(r=>r.invNum).length;
+  set('prize', withInv ? `（${withInv} 張可對）` : '');
 }
 applySections();
+initPrizeUI();
 
 /* =========================================================
    Bottom nav / page switching
