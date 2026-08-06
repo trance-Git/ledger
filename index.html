@@ -160,9 +160,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cd-mid .qty{margin-left:6px;font-size:11px;color:var(--sub2);}
 .cd-amt{font-size:14px;font-weight:600;flex-shrink:0;}
 .learn-row{margin-top:8px;font-size:12.5px;color:var(--sub);}
-.pay-filter{margin-bottom:12px;}
-.pay-filter button{padding:9px;font-size:13px;}
-.pay-filter button.active[data-pay=""]{background:var(--blue-bg);color:var(--blue);border-color:var(--blue);}
+/* 可點的摘要卡＝檢視切換；選取者加粗外框，未選者稍微淡化 */
+.summary-card.sel{cursor:pointer;border-width:1.5px;transition:opacity .15s,border-color .15s;}
+.summary-card.sel:not(.picked){opacity:.62;}
+.summary-card.sel.picked{border-color:var(--blue);}
+.summary-card.total.sel.picked{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35) inset;}
+.summary-card.sel .lbl::after{content:'';}
+.summary-card.sel.picked .lbl::after{content:' ●';font-size:9px;color:var(--blue);vertical-align:2px;}
+.summary-card.total.sel.picked .lbl::after{color:#fff;}
 .cat-stat-row.is-sub{padding-left:16px;}
 .cat-stat-row.is-sub .bar-bg{height:5px;}
 .cat-stat-row.is-parent{font-weight:600;}
@@ -303,15 +308,11 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button data-period="year">年</button>
     </div>
     <div class="month-nav" id="period-picker-wrap"></div>
-    <div class="seg pay-filter" id="stats-pay">
-      <button data-pay="" class="active">總額</button>
-      <button data-pay="cash">💵 現金</button>
-      <button data-pay="credit">💳 刷卡</button>
-    </div>
-    <div class="summary-grid">
-      <div class="summary-card total"><div class="lbl">總支出</div><div class="val" id="s-total">NT$0</div></div>
-      <div class="summary-card"><div class="lbl">💵 現金</div><div class="val" id="s-cash">NT$0</div></div>
-      <div class="summary-card"><div class="lbl">💳 信用卡</div><div class="val" id="s-credit">NT$0</div></div>
+    <!-- 這三張卡同時是「總額／現金／刷卡」的檢視切換，點了會套用到下方圖表與佔比 -->
+    <div class="summary-grid" id="stats-pay">
+      <div class="summary-card total sel" data-pay=""><div class="lbl">總支出</div><div class="val" id="s-total">NT$0</div></div>
+      <div class="summary-card sel" data-pay="cash"><div class="lbl">💵 現金</div><div class="val" id="s-cash">NT$0</div></div>
+      <div class="summary-card sel" data-pay="credit"><div class="lbl">💳 信用卡</div><div class="val" id="s-credit">NT$0</div></div>
       <div class="summary-card"><div class="lbl">📌 固定支出</div><div class="val" id="s-fixed">NT$0</div></div>
       <div class="summary-card"><div class="lbl">🔄 一般支出</div><div class="val" id="s-variable">NT$0</div></div>
     </div>
@@ -601,20 +602,26 @@ const DEFAULT_RULES = [
   ['education', '報名費,學費,補習,課程,講座,書籍,文具,鑑定,認證,考試', ''],
   ['entertainment', '電影,影城,威秀,國賓,KTV,遊戲,steam,switch,ps5,展覽,門票,演唱會,球賽,健身,旅館,民宿', ''],
 
-  // 二、店家決定屬性：超商／餐飲店賣的一律算餐飲
+  // 二、飲料歸到「餐飲・飲料」子分類。必須排在店家規則之前，
+  //     否則在超商買的可樂會先被店家規則吃掉、只歸到餐飲。
+  //     「茶」會誤中茶葉蛋、茶碗蒸，故先用一條擋下來（先命中者勝）。
+  ['food', '茶葉蛋,茶碗蒸,茶油,茶籽', ''],
+  ['food-drink', '飲料,飲品,手搖,茶,咖啡,拿鐵,美式,卡布,摩卡,豆漿,豆奶,可樂,雪碧,汽水,沙士,果汁,柳橙汁,礦泉水,純水,舒跑,運動飲料,珍奶,珍珠,多多,養樂多,奶昔,冰沙,思樂冰,氣泡,啤酒,調酒,可爾必思,鮮榨,冬瓜,青蛙撞,四季春,烏龍,紅茶,綠茶,奶茶', ''],
+
+  // 三、店家決定屬性：超商／餐飲店賣的一律算餐飲
   // 連鎖店的公司登記名常看不出行業（和德昌＝麥當勞、爭鮮＝壽司），故直接列名
   ['food', '', '超商,便利商店,7-ELEVEN,統一超商,全家便利,萊爾富,OK超商,麥當勞,和德昌,肯德基,摩斯,漢堡,披薩,壽司,爭鮮,拉麵,火鍋,燒肉,麵食,麵店,小吃,餐廳,餐飲,食堂,飲料,茶飲,咖啡,星巴克,路易莎,cama,清心,五十嵐,迷客夏,大苑子,春水堂,茶店,烘焙,麵包,早餐,便當,自助餐,食品行,飲食'],
 
-  // 三、店家決定屬性：超市／賣場／市場才把食材視為生鮮
+  // 四、店家決定屬性：超市／賣場／市場才把食材視為生鮮
   ['produce', '', '超市,量販,全聯,家樂福,大潤發,愛買,美廉社,楓康,裕毛屋,果菜,市場,農會,漁會,肉舖,魚舖,菜舖'],
 
-  // 四、以上都沒命中時，才單看品項
+  // 五、以上都沒命中時，才單看品項
   ['food', '便當,飯糰,炒飯,滷肉飯,麵,粥,湯,早餐,午餐,晚餐,宵夜,咖啡,拿鐵,美式,紅茶,綠茶,青茶,奶茶,豆漿,飲料,可樂,雪碧,礦泉水,純水,茶葉,吐司,蛋糕,餅乾,零食,洋芋片,巧克力,糖果,冰淇淋,泡麵,罐頭,薯,雞塊,水餃,鍋貼,沙拉,三明治,關東煮,茶葉蛋,套餐,伴手禮,零嘴,米果,夾心餅,波的多,乖乖,卡迪那,蛋撻,可可,牛乳,高蛋白,火腿,煎蛋,嫩雞,捲餅,食品,餐飲,雞肉,飲,茶,珍奶,珍珠,手搖,果汁,汽水,啤酒,調酒,氣泡,冰沙,思樂冰,豆花,甜點,布丁,麻糬,雞排,滷味,鹹酥雞,便當,炸,烤,滷,炒', ''],
   ['produce', '高麗菜,青菜,菠菜,空心菜,地瓜葉,青江菜,大白菜,花椰菜,萵苣,生菜,紅蘿蔔,白蘿蔔,馬鈴薯,洋蔥,牛番茄,小黃瓜,茄子,南瓜,青椒,彩椒,香菇,金針菇,杏鮑菇,豆芽,青蔥,老薑,嫩薑,蒜頭,香菜,九層塔,香蕉,蘋果,芭樂,橘子,柳丁,葡萄,西瓜,鳳梨,芒果,木瓜,火龍果,奇異果,草莓,酪梨,洗選蛋,雞蛋,雞胸肉,雞腿肉,豬肉,牛肉片,里肌,絞肉,五花,排骨,鮭魚,鯖魚,虱目魚,蛤蜊,豆腐,豆干,生鮮,牛奶,鮮奶,牛乳,保久乳,優酪乳,優格,起司,乳酪,奶油,養樂多,白米,糙米,麵條,麵粉,沙拉油,橄欖油,食用油,香油,麻油,苦茶油,葵花油,砂糖,白糖,冰糖,醬油,味精,調味', ''],
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.3';
+const APP_VERSION = '3.4';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -747,7 +754,7 @@ function renderHeaderTotal(){
 
 /* 內建資料的種子版本。往上加時只補「這個版本新增的」預設分類/規則，
    已存在的 id 一律不覆蓋，使用者刪掉的也不會被重新塞回來。 */
-const SEED_VERSION = 6;
+const SEED_VERSION = 7;
 
 const seedRuleId = (cat, i) => 'seed-' + cat + '-' + i;
 const splitKw = s => String(s || '').split(/[,，、\n]/).map(x => x.trim()).filter(Boolean);
@@ -1909,11 +1916,12 @@ let statsDate = todayStr();
 let statsMonth = todayStr().slice(0,7);
 let statsYear = String(new Date().getFullYear());
 let pieChart = null, trendChart = null;
+let statsPay = '';   // '' | 'cash' | 'credit'：統計頁目前的檢視範圍
 
 document.getElementById('stats-merge').addEventListener('change', renderStats);
 document.getElementById('stats-pay').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  document.querySelectorAll('#stats-pay button').forEach(x => x.classList.toggle('active', x === b));
+  const card = e.target.closest('.summary-card.sel'); if (!card) return;
+  statsPay = card.dataset.pay;
   renderStats();
 });
 document.querySelectorAll('.period-tabs button').forEach(btn => btn.addEventListener('click', () => {
@@ -1978,9 +1986,11 @@ function renderStats(){
   document.getElementById('s-variable').textContent = fmt(variable);
 
   // 分類佔比：可依付款方式過濾，並把子分類收在主分類底下顯示
-  const payFilter = document.querySelector('#stats-pay button.active').dataset.pay;
+  const payFilter = statsPay;
   const scoped = payFilter ? exp.filter(r => r.payment === payFilter) : exp;
   const scopedTotal = scoped.reduce((s,r)=>s+r.amount,0);
+  document.querySelectorAll('#stats-pay .summary-card.sel').forEach(el =>
+    el.classList.toggle('picked', el.dataset.pay === statsPay));
   document.getElementById('pie-scope').textContent =
     payFilter === 'cash' ? '（現金）' : payFilter === 'credit' ? '（信用卡）' : '';
 
@@ -2091,10 +2101,8 @@ function renderPieChart(rows, scopedTotal){
   });
 }
 
-const trendScopeLabel = () => {
-  const p = document.querySelector('#stats-pay button.active').dataset.pay;
-  return p === 'cash' ? '（現金）' : p === 'credit' ? '（信用卡）' : '';
-};
+const trendScopeLabel = () =>
+  statsPay === 'cash' ? '（現金）' : statsPay === 'credit' ? '（信用卡）' : '';
 function renderTrendChart(periodList){
   const card = document.getElementById('trend-card');
   const title = document.getElementById('trend-title');
