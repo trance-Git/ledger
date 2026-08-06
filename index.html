@@ -38,6 +38,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .page.active{display:block;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;margin-bottom:12px;}
 .section-title{font-size:13px;font-weight:600;color:var(--sub);margin:1.2rem 0 .6rem;text-transform:uppercase;letter-spacing:.03em;}
+.section-title.collapsible{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:8px;text-transform:none;font-size:14px;color:var(--text);}
+.section-title.collapsible i{font-size:17px;color:var(--sub2);transition:transform .18s;}
+.section-title.collapsible.closed i{transform:rotate(-90deg);}
+.sec-count{font-size:11.5px;font-weight:400;color:var(--sub2);margin-left:6px;}
+[data-sec-body].closed{display:none;}
 .section-title:first-child{margin-top:0;}
 
 /* ---- Bottom Nav ---- */
@@ -239,6 +244,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
 .recur-row .ramt{font-size:14px;font-weight:700;flex-shrink:0;}
 .recur-total{text-align:right;font-size:12px;color:var(--sub);padding-top:10px;margin-top:4px;border-top:1px dashed var(--border);}
 .recur-total b{color:var(--text);font-size:14px;}
+.next-run{font-size:10px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:5px;margin-left:6px;font-weight:400;white-space:nowrap;}
 
 /* ---- rules ---- */
 .rule-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
@@ -343,14 +349,14 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
 
   <!-- 設定 -->
   <div id="page-settings" class="page">
-    <div class="section-title" style="margin-top:0;">分類管理</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="cats" style="margin-top:0;"><span>分類管理<span class="sec-count" id="sec-count-cats"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="cats">
       <div id="cat-manage-list"></div>
       <button class="btn btn-ghost btn-block" id="add-cat-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增分類</button>
     </div>
 
-    <div class="section-title">匯入載具發票</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="import"><span>匯入載具發票<span class="sec-count" id="sec-count-import"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="import">
       <p class="help" style="margin-top:0;">到財政部平台或發票 App 匯出載具發票 CSV，選檔後會自動辨識欄位、套用分類規則、依分類拆帳。匯入前會先讓你確認。</p>
       <button class="btn btn-primary btn-block" id="csv-pick"><i class="ti ti-file-import"></i> 選擇發票 CSV</button>
       <!-- 刻意不設 accept：iOS 的檔案選擇器對 CSV 的類型判定不可靠，
@@ -359,22 +365,22 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <div id="csv-status" class="ei-status"></div>
     </div>
 
-    <div class="section-title">每月固定支出</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="recur"><span>每月固定支出<span class="sec-count" id="sec-count-recur"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="recur">
       <p class="help" style="margin-top:0;">登記房租、保險、訂閱等每月固定的支出。開啟 App 時會自動補上已到期的月份，金額有變動或當月不想記，直接改或刪那一筆即可。</p>
       <div id="recurring-list"></div>
       <button class="btn btn-ghost btn-block" id="add-recurring-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增固定支出</button>
     </div>
 
-    <div class="section-title">自動分類規則</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="rules"><span>自動分類規則<span class="sec-count" id="sec-count-rules"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="rules">
       <p class="help" style="margin-top:0;">掃描發票或輸入品項時，會依關鍵字自動判斷分類。由上往下比對，第一個命中的規則生效。</p>
       <div id="rule-list"></div>
       <button class="btn btn-ghost btn-block" id="add-rule-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增規則</button>
     </div>
 
-    <div class="section-title">資料備份</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="backup"><span>資料備份<span class="sec-count" id="sec-count-backup"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="backup">
       <div class="backup-stat" id="backup-stat"></div>
       <div class="form-actions" style="margin-top:12px;">
         <button class="btn btn-ghost btn-block" id="export-btn"><i class="ti ti-download"></i> 匯出備份</button>
@@ -384,8 +390,8 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <p class="help"><i class="ti ti-alert-triangle" style="color:var(--orange);"></i> 資料只存在這支手機裡。若清除瀏覽器資料或更換手機，紀錄會消失，建議定期匯出備份存到雲端硬碟或傳給自己。</p>
     </div>
 
-    <div class="section-title">清除資料</div>
-    <div class="card">
+    <div class="section-title collapsible" data-sec="wipe"><span>清除資料<span class="sec-count" id="sec-count-wipe"></span></span><i class="ti ti-chevron-down"></i></div>
+    <div class="card" data-sec-body="wipe">
       <div class="field"><label>清除指定月份的紀錄</label>
         <div class="month-nav" style="margin-bottom:0;">
           <input type="month" id="wipe-month">
@@ -501,6 +507,8 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       </div>
     </div>
     <label class="chk-row"><input type="checkbox" id="rc-active" checked><span>啟用（取消勾選就暫停，不會再自動產生）</span></label>
+    <div id="rc-next" class="help"></div>
+    <button class="btn btn-ghost btn-block" id="rc-now" style="display:none;margin-top:10px;"><i class="ti ti-plus"></i> 立即補記這個月</button>
     <div class="form-actions">
       <button class="btn btn-danger" id="rc-delete" style="display:none;"><i class="ti ti-trash"></i></button>
       <button class="btn btn-primary btn-block" id="rc-save">儲存</button>
@@ -665,7 +673,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.5';
+const APP_VERSION = '3.6';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -769,6 +777,7 @@ function onDataChanged(){
   renderBackupStat();
   renderHeaderTotal();
   renderWallet();
+  renderSectionCounts();
 }
 
 /* =========================================================
@@ -1403,10 +1412,13 @@ function renderRecurringList(){
   const totalOn = recurring.filter(r=>r.active).reduce((s,r)=>s+r.amount,0);
   wrap.innerHTML = recurring.map(r => {
     const c = catById(r.category) || {icon:'❓',name:'未分類'};
+    const nx = nextRunOf(r);
+    const status = !r.active ? '<span class="fixed-badge" style="background:var(--border);color:var(--sub)">已暫停</span>'
+      : nx ? `<span class="next-run">下次 ${nx.slice(5).replace('-','/')}</span>` : '';
     return `<div class="recur-row${r.active?'':' off'}" data-id="${r.id}">
       <span class="ico">${c.icon}</span>
       <div class="body">
-        <div class="nm">${escapeHtml(r.name)}${r.active?'':'<span class="fixed-badge" style="background:var(--border);color:var(--sub)">已暫停</span>'}</div>
+        <div class="nm">${escapeHtml(r.name)}${status}</div>
         <div class="kw">每月 ${r.day} 號・${catLabel(c)}・${r.payment==='cash'?'現金':'信用卡'}</div>
       </div>
       <span class="ramt">${fmt(r.amount)}</span>
@@ -1415,6 +1427,22 @@ function renderRecurringList(){
   }).join('') + `<div class="recur-total">啟用中每月合計 <b>${fmt(totalOn)}</b></div>`;
   wrap.querySelectorAll('.edit-recur').forEach(b =>
     b.addEventListener('click', () => openRecurSheet(b.dataset.id)));
+}
+
+/* 下一次會自動產生的日期（已產生過本月就是下個月），用來讓使用者知道
+   「還沒出現」是因為日期未到，而不是設定失敗 */
+function nextRunOf(r){
+  if (!r.active) return null;
+  const today = todayStr();
+  let ym = r.lastRun ? addMonth(r.lastRun, 1) : (r.startMonth || ymOf(today));
+  for (let i = 0; i < 24; i++){
+    const [y, m] = ym.split('-').map(Number);
+    const day = Math.min(r.day, new Date(y, m, 0).getDate());
+    const date = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    if (date > today) return date;
+    ym = addMonth(ym, 1);
+  }
+  return null;
 }
 
 let editingRecurId = null;
@@ -1434,8 +1462,36 @@ function openRecurSheet(id){
   document.querySelectorAll('#rc-pay-seg button').forEach(b=>b.classList.toggle('active', b.dataset.pay===pay));
   document.getElementById('rc-active').checked = r ? !!r.active : true;
   document.getElementById('rc-delete').style.display = r ? 'inline-flex' : 'none';
+
+  // 已登記但本月尚未產生時，提供手動補記
+  const thisYm = ymOf(todayStr());
+  const pending = r && r.active && r.lastRun !== thisYm;
+  document.getElementById('rc-now').style.display = pending ? 'flex' : 'none';
+  const nx = r ? nextRunOf(r) : null;
+  document.getElementById('rc-next').textContent =
+    r && r.active && nx ? `下次自動新增：${nx}` : '';
   document.getElementById('recur-overlay').classList.add('show');
 }
+
+document.getElementById('rc-now').addEventListener('click', async () => {
+  const r = recurring.find(x => x.id === editingRecurId); if (!r) return;
+  const thisYm = ymOf(todayStr());
+  const [y, m] = thisYm.split('-').map(Number);
+  const day = Math.min(r.day, new Date(y, m, 0).getDate());
+  const date = `${thisYm}-${String(day).padStart(2,'0')}`;
+  const cat = catById(r.category);
+  await saveRecord({
+    id: uid(), date, amount: r.amount, type:'expense',
+    category: r.category, payment: r.payment,
+    fixed: true, note: r.name, photo: null,
+    recurringId: r.id, createdAt: Date.now(),
+  });
+  r.lastRun = thisYm;                       // 標記本月已產生，之後不會重複
+  await saveRecurring(r);
+  document.getElementById('recur-overlay').classList.remove('show');
+  jumpToMonth(date);
+  toast(`已補記 ${date.slice(5).replace('-','/')} ${fmt(r.amount)}`);
+});
 document.getElementById('add-recurring-btn').addEventListener('click', () => openRecurSheet(null));
 document.getElementById('recur-close').addEventListener('click', () => document.getElementById('recur-overlay').classList.remove('show'));
 document.getElementById('recur-overlay').addEventListener('click', (e)=>{ if(e.target.id==='recur-overlay') e.currentTarget.classList.remove('show'); });
@@ -1464,8 +1520,15 @@ document.getElementById('rc-save').addEventListener('click', async () => {
   await saveRecurring(item);
   document.getElementById('recur-overlay').classList.remove('show');
   const n = await runRecurring();          // 若今天已過該日，立刻補上本月這筆
-  if (n){ onDataChanged(); toast(`已儲存，並新增 ${n} 筆`); }
-  else toast('已儲存');
+  if (n){
+    onDataChanged();
+    jumpToMonth(todayStr());
+    toast(`已儲存，並新增 ${n} 筆`);
+  } else {
+    // 日期未到時明確告知，否則使用者會以為設定沒生效
+    const nx = nextRunOf(item);
+    toast(nx ? `已儲存，將於 ${nx.slice(5).replace('-','/')} 自動新增` : '已儲存');
+  }
 });
 document.getElementById('rc-delete').addEventListener('click', async () => {
   if (!editingRecurId) return;
@@ -2866,6 +2929,44 @@ function syncBodyLock(){
   document.querySelectorAll('.overlay, .scanner').forEach(el =>
     mo.observe(el, { attributes:true, attributeFilter:['class'] }));
 }
+
+/* =========================================================
+   設定頁區塊收合
+   分類與規則清單很長，預設收起來；收合狀態記在 localStorage。
+   ========================================================= */
+const SEC_DEFAULT_CLOSED = ['cats','rules','import','wipe'];
+function secClosed(){
+  try { return JSON.parse(localStorage.getItem('ledger-sections') || 'null') || SEC_DEFAULT_CLOSED; }
+  catch(e){ return SEC_DEFAULT_CLOSED; }
+}
+function applySections(){
+  const closed = secClosed();
+  document.querySelectorAll('.section-title.collapsible').forEach(t => {
+    const key = t.dataset.sec, off = closed.includes(key);
+    t.classList.toggle('closed', off);
+    const body = document.querySelector(`[data-sec-body="${key}"]`);
+    if (body) body.classList.toggle('closed', off);
+  });
+}
+document.querySelectorAll('.section-title.collapsible').forEach(t => {
+  t.addEventListener('click', () => {
+    const key = t.dataset.sec;
+    const closed = secClosed();
+    const i = closed.indexOf(key);
+    if (i >= 0) closed.splice(i, 1); else closed.push(key);
+    localStorage.setItem('ledger-sections', JSON.stringify(closed));
+    applySections();
+  });
+});
+// 收起來時仍看得到數量，不用展開才知道裡面有多少
+function renderSectionCounts(){
+  const set = (k, v) => { const el = document.getElementById('sec-count-'+k); if (el) el.textContent = v; };
+  set('cats', `（${categories.length}）`);
+  set('rules', `（${rules.length}）`);
+  set('recur', recurring.length ? `（${recurring.length}）` : '');
+  set('wipe', `（${records.length} 筆紀錄）`);
+}
+applySections();
 
 /* =========================================================
    Bottom nav / page switching
