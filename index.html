@@ -377,6 +377,9 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="card" data-sec-body="prize">
       <p class="help" style="margin-top:0;">輸入該期的中獎號碼，會自動比對所有掃描或匯入進來的發票號碼。手動記帳的紀錄沒有發票號碼，不會列入比對。</p>
       <div class="field"><label>期別</label><select id="pz-period"></select></div>
+      <button class="btn btn-ghost btn-block" id="pz-photo-btn" style="margin-bottom:14px;"><i class="ti ti-photo-scan"></i> 用照片辨識中獎號碼</button>
+      <input type="file" id="pz-photo-input" accept="image/*" style="display:none;">
+      <div id="pz-ocr" class="ocr-status" style="display:none;"><i class="ti ti-loader"></i><span>辨識中...</span></div>
       <div class="field"><label>特別獎（1000萬）</label><input type="text" id="pz-special" inputmode="numeric" maxlength="8" placeholder="8 碼"></div>
       <div class="field"><label>特獎（200萬）</label><input type="text" id="pz-grand" inputmode="numeric" maxlength="8" placeholder="8 碼"></div>
       <div class="field"><label>頭獎（20萬，共 3 組）</label>
@@ -384,7 +387,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
         <input type="text" id="pz-first2" inputmode="numeric" maxlength="8" placeholder="8 碼" style="margin-bottom:7px;">
         <input type="text" id="pz-first3" inputmode="numeric" maxlength="8" placeholder="8 碼">
       </div>
-      <div class="field"><label>增開六獎（200 元，末 3 碼，可多組用逗號分隔）</label>
+      <div class="field"><label>增開六獎（末 3 碼，需自行輸入）</label>
         <input type="text" id="pz-extra" inputmode="numeric" placeholder="例如 531,808"></div>
       <button class="btn btn-primary btn-block" id="pz-check"><i class="ti ti-ticket"></i> 開始對獎</button>
       <div id="pz-status" class="ei-status"></div>
@@ -453,7 +456,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button class="btn btn-ghost" id="quick-photo-btn"><i class="ti ti-camera"></i> 拍收據</button>
     </div>
 
-    <div class="field"><input type="number" inputmode="decimal" class="amount-input" id="r-amount" placeholder="0" min="0"></div>
+    <div class="field"><input type="text" inputmode="decimal" class="amount-input" id="r-amount" placeholder="0" autocomplete="off"></div>
 
     <div class="field" id="photo-field" style="display:none;">
       <div class="photo-area" id="photo-area"></div>
@@ -524,7 +527,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2 id="recur-sheet-title">新增固定支出</h2><button id="recur-close">&times;</button></div>
     <div class="field"><label>名稱</label><input type="text" id="rc-name" placeholder="例如：房租、Netflix、機車保險"></div>
-    <div class="field"><label>金額</label><input type="number" inputmode="decimal" id="rc-amount" placeholder="0" min="0"></div>
+    <div class="field"><label>金額</label><input type="text" inputmode="decimal" id="rc-amount" placeholder="0" autocomplete="off"></div>
     <div class="field"><label>每月幾號</label>
       <select id="rc-day"></select>
       <div class="help" style="margin-top:6px;">遇到當月沒有的日期（例如 31 號遇到 2 月）會自動改記在該月最後一天。</div>
@@ -703,9 +706,34 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.7';
+const APP_VERSION = '3.8';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+/* 金額輸入欄的千分位。type=number 無法顯示逗號，故改用 text，
+   邊打邊格式化；重排字串會讓游標跳到最後，因此以「游標前的數字個數」還原位置。 */
+function attachThousands(el){
+  el.addEventListener('input', () => {
+    const before = el.value.slice(0, el.selectionStart).replace(/[^\d]/g,'').length;
+    const raw = el.value.replace(/[^\d.]/g,'');
+    const [int, ...rest] = raw.split('.');
+    let out = int ? Number(int).toLocaleString('en-US') : '';
+    if (raw.includes('.')) out += '.' + (rest.join('') || '').slice(0,2);
+    el.value = out;
+    let seen = 0, pos = out.length;
+    for (let i = 0; i < out.length; i++){
+      if (/\d/.test(out[i])) seen++;
+      if (seen === before){ pos = i + 1; break; }
+    }
+    if (before === 0) pos = 0;
+    el.setSelectionRange(pos, pos);
+  });
+}
+const numVal = id => parseFloat(String(document.getElementById(id).value).replace(/,/g,'')) || 0;
+const setAmount = (id, v) => {
+  document.getElementById(id).value =
+    (v === '' || v == null) ? '' : Number(v).toLocaleString('en-US');
+};
+
 // 負數要顯示成 -NT$250 而不是 NT$-250
 const fmt = n => { const v = Math.round(n||0); return (v<0?'-':'') + 'NT$' + Math.abs(v).toLocaleString('zh-TW'); };
 const toast = (msg) => { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), 2200); };
@@ -1497,6 +1525,137 @@ function readPrizeInputs(){
   };
 }
 
+/* 依文字座標把號碼歸給獎項。公告多為雙欄排版，OCR 逐行讀會把左右欄交錯，
+   純文字順序無法判斷歸屬（實測會把特獎抓成頭獎的號碼）。
+   改以每個號碼與各獎項標題的相對位置決定：標題須在號碼上方或同高，
+   同欄（x 接近）優先，再取垂直距離最近者。 */
+function parsePrizeWords(words){
+  const ws = words
+    .filter(w => w.bbox && (w.text||'').trim())
+    .map(w => ({ t:(w.text||'').replace(/\s/g,''),
+                 cx:(w.bbox.x0+w.bbox.x1)/2, cy:(w.bbox.y0+w.bbox.y1)/2 }));
+  if (!ws.length) return null;
+
+  // OCR 會把中文逐字切成獨立 word（「特 別 獎」是三個），無法直接比對關鍵字。
+  // 先依 y 分行、行內依 x 排序，重組成整行文字後再找關鍵字，並保留每個字的 x。
+  const lines = [];
+  for (const w of ws.slice().sort((a,b)=>a.cy-b.cy)){
+    let L = lines.find(l => Math.abs(l.cy - w.cy) < 18);
+    if (!L){ L = { cy:w.cy, items:[] }; lines.push(L); }
+    L.items.push(w);
+  }
+  lines.forEach(l => l.items.sort((a,b)=>a.cx-b.cx));
+
+  const kw = [], num = [], extraNum = [];
+  for (const l of lines){
+    const joined = l.items.map(i=>i.t).join('');
+    const posX = [];                       // 字串位置 → 該字的 x
+    l.items.forEach(i => { for (let k=0;k<i.t.length;k++) posX.push(i.cx); });
+    const push = (key, idx) => kw.push({ k:key, cx: posX[idx] ?? l.items[0].cx, cy: l.cy });
+    let m;
+    if ((m = joined.indexOf('特別獎')) >= 0) push('special', m);
+    if ((m = joined.indexOf('增開'))   >= 0) push('extra', m);
+    // 「特別獎」含有「特獎」以外的字，但仍先遮掉避免誤判為特獎（長度不變，索引不偏移）
+    const gi = joined.replace('特別獎','＊＊＊').indexOf('特獎');
+    if (gi >= 0) push('grand', gi);
+    if ((m = joined.indexOf('頭獎')) >= 0) push('first', m);
+    for (const i of l.items){
+      const d = i.t.replace(/\D/g,'');
+      if (d.length === 8) num.push({ n:d, cx:i.cx, cy:i.cy });
+      else if (d.length === 3) extraNum.push({ n:d, cx:i.cx, cy:i.cy });
+    }
+  }
+  if (!kw.length || !num.length) return null;
+
+  const out = { special:'', grand:'', first:[], extra:[] };
+  for (const p of num){
+    let best = null, bestCost = Infinity;
+    for (const k of kw){
+      if (k.cy > p.cy + 20) continue;                 // 標題在號碼下方，跳過
+      const cost = Math.abs(k.cx - p.cx) * 1.5 + (p.cy - k.cy);
+      if (cost < bestCost){ bestCost = cost; best = k; }
+    }
+    if (!best) continue;
+    if (best.k === 'first'){ if (out.first.length < 3) out.first.push(p); }
+    else if (!out[best.k]) out[best.k] = p;
+  }
+  out.first.sort((a,b)=>a.cy-b.cy);
+
+  /* 增開六獎刻意不自動帶入。公告寫成「增開六獎 200元 531、808」，
+     獎金「200」與中獎的 3 碼長度相同、OCR 無法可靠區分；
+     若誤帶成中獎號碼，所有末三碼相同的發票都會被判成中獎，
+     寧可讓使用者自己輸入這一兩組數字。 */
+  return {
+    special: out.special ? out.special.n : '',
+    grand:   out.grand   ? out.grand.n   : '',
+    first:   out.first.map(x=>x.n),
+    extra:   [],
+  };
+}
+
+/* 從中獎號碼截圖辨識。財政部的 XML 有資料但沒有 CORS 標頭，
+   瀏覽器抓不到（實測 Failed to fetch），所以走 OCR。
+   座標法失敗時才退回純文字推定。 */
+function parsePrizeText(text){
+  const t = String(text).replace(/[Oo]/g,'0').replace(/[lI]/g,'1');
+  const grab = (kw, count) => {
+    const i = t.indexOf(kw);
+    if (i < 0) return [];
+    // 只在關鍵字後方一段範圍內找，避免抓到下一個獎項的號碼
+    const seg = t.slice(i + kw.length, i + kw.length + (count > 1 ? 90 : 40));
+    return (seg.match(/\d{8}/g) || []).slice(0, count);
+  };
+  let special = grab('特別獎', 1)[0] || '';
+  let grand   = grab('特獎', 1)[0] || '';
+  let first   = grab('頭獎', 3);
+
+  // 關鍵字沒抓到就用公告順序：特別獎、特獎、頭獎 ×3
+  if (!special && !grand && !first.length){
+    const all = [...new Set(t.match(/\d{8}/g) || [])];
+    special = all[0] || ''; grand = all[1] || ''; first = all.slice(2, 5);
+  }
+  // 增開六獎不猜（獎金「200元」與中獎 3 碼無法區分），交由使用者輸入
+  return { special, grand, first: first.filter(Boolean), extra: [] };
+}
+
+document.getElementById('pz-photo-btn').addEventListener('click',
+  () => document.getElementById('pz-photo-input').click());
+document.getElementById('pz-photo-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  const st = document.getElementById('pz-ocr');
+  st.style.display = 'flex';
+  st.querySelector('span').textContent = '辨識中...';
+  try{
+    if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    const dataUrl = await compressImage(file, 1600, 0.85);
+    const { data } = await window.Tesseract.recognize(dataUrl, 'chi_tra+eng', {
+      logger: m => { if (m.status==='recognizing text')
+        st.querySelector('span').textContent = `辨識中 ${Math.round((m.progress||0)*100)}%`; }
+    });
+    // 優先用座標判斷歸屬，取不到字詞位置時才退回純文字
+    const words = data.words || (data.blocks || []).flatMap(b =>
+      (b.paragraphs||[]).flatMap(pp => (pp.lines||[]).flatMap(l => l.words||[])));
+    const byPos = words.length ? parsePrizeWords(words) : null;
+    const byText = parsePrizeText(data.text || '');
+    const p = (byPos && (byPos.special || byPos.grand || byPos.first.length)) ? byPos : byText;
+    if (p.special) document.getElementById('pz-special').value = p.special;
+    if (p.grand)   document.getElementById('pz-grand').value   = p.grand;
+    p.first.forEach((n,i)=>{ const el=document.getElementById('pz-first'+(i+1)); if (el) el.value = n; });
+    if (p.extra.length) document.getElementById('pz-extra').value = p.extra.join(',');
+    const got = (p.special?1:0)+(p.grand?1:0)+p.first.length;
+    // 立即保存，避免辨識完還沒按對獎就離開而白填
+    if (got) localStorage.setItem(prizeStoreKey(document.getElementById('pz-period').value),
+                                  JSON.stringify(readPrizeInputs()));
+    st.querySelector('span').textContent = got
+      ? `已帶入 ${got} 組號碼，請核對；增開六獎請自行輸入`
+      : '沒辨識到 8 碼號碼，請改用清楚一點的截圖或手動輸入';
+  }catch(err){
+    console.error(err);
+    st.querySelector('span').textContent = '辨識失敗，請手動輸入';
+  }
+});
+
 function initPrizeUI(){
   const sel = document.getElementById('pz-period');
   sel.innerHTML = prizePeriods().map(p=>`<option value="${p.key}">${p.label}</option>`).join('');
@@ -1620,7 +1779,7 @@ function openRecurSheet(id){
   const r = id ? recurring.find(x=>x.id===id) : null;
   document.getElementById('recur-sheet-title').textContent = r ? '編輯固定支出' : '新增固定支出';
   document.getElementById('rc-name').value = r ? r.name : '';
-  document.getElementById('rc-amount').value = r ? r.amount : '';
+  setAmount('rc-amount', r ? r.amount : '');
   const daySel = document.getElementById('rc-day');
   daySel.innerHTML = Array.from({length:31}, (_,i)=>`<option value="${i+1}">${i+1} 號</option>`).join('');
   daySel.value = String(r ? r.day : 1);
@@ -1671,7 +1830,7 @@ document.getElementById('rc-pay-seg').addEventListener('click', (e)=>{
 
 document.getElementById('rc-save').addEventListener('click', async () => {
   const name = document.getElementById('rc-name').value.trim();
-  const amount = parseFloat(document.getElementById('rc-amount').value);
+  const amount = numVal('rc-amount');
   if (!name){ toast('請輸入名稱'); return; }
   if (!amount || amount <= 0){ toast('請輸入金額'); return; }
   const old = editingRecurId ? recurring.find(r=>r.id===editingRecurId) : null;
@@ -1799,7 +1958,7 @@ document.getElementById('r-type-seg').addEventListener('click', (e) => {
 function openRecordSheet(rec){
   editingId = rec ? rec.id : null;
   document.getElementById('record-sheet-title').textContent = rec ? '編輯支出' : '新增支出';
-  document.getElementById('r-amount').value = rec ? rec.amount : '';
+  setAmount('r-amount', rec ? rec.amount : '');
   document.getElementById('r-date').value = rec ? rec.date : todayStr();
   document.getElementById('r-note').value = rec ? (rec.note||'') : '';
   document.getElementById('r-fixed').checked = rec ? !!rec.fixed : false;
@@ -1830,7 +1989,7 @@ document.getElementById('r-pay-seg').addEventListener('click', (e) => {
 });
 
 document.getElementById('r-save').addEventListener('click', async () => {
-  const amount = parseFloat(document.getElementById('r-amount').value);
+  const amount = numVal('r-amount');
   if (!amount || amount<=0){ toast('請輸入金額'); return; }
   const inc = selectedType === 'income';
   if (!inc && !selectedCat){ toast('請選擇分類'); return; }
@@ -1983,7 +2142,7 @@ async function runOcr(dataUrl){
     const amount = parseAmountFromText(text);
     const msgs = [];
     if (amount){
-      document.getElementById('r-amount').value = amount;
+      setAmount('r-amount', amount);
       msgs.push(`金額 NT$${amount}`);
     }
     // 收據文字同樣送進關鍵字規則，猜一個分類出來
@@ -3139,6 +3298,7 @@ function renderSectionCounts(){
 }
 applySections();
 initPrizeUI();
+['r-amount','rc-amount'].forEach(id => attachThousands(document.getElementById(id)));
 
 /* =========================================================
    Bottom nav / page switching
