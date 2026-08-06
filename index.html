@@ -229,6 +229,17 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
 .btn-scan{background:var(--blue);color:#fff;}
 .auto-hint{font-size:12px;color:var(--green);margin-top:6px;display:flex;align-items:center;gap:4px;}
 
+/* ---- 固定支出 ---- */
+.recur-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.recur-row:last-of-type{border-bottom:none;}
+.recur-row.off{opacity:.5;}
+.recur-row .ico{font-size:19px;width:28px;text-align:center;flex-shrink:0;}
+.recur-row .body{flex:1;min-width:0;}
+.recur-row .nm{font-size:13.5px;font-weight:600;margin-bottom:2px;}
+.recur-row .ramt{font-size:14px;font-weight:700;flex-shrink:0;}
+.recur-total{text-align:right;font-size:12px;color:var(--sub);padding-top:10px;margin-top:4px;border-top:1px dashed var(--border);}
+.recur-total b{color:var(--text);font-size:14px;}
+
 /* ---- rules ---- */
 .rule-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
 .rule-row:last-child{border-bottom:none;}
@@ -348,6 +359,13 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <div id="csv-status" class="ei-status"></div>
     </div>
 
+    <div class="section-title">每月固定支出</div>
+    <div class="card">
+      <p class="help" style="margin-top:0;">登記房租、保險、訂閱等每月固定的支出。開啟 App 時會自動補上已到期的月份，金額有變動或當月不想記，直接改或刪那一筆即可。</p>
+      <div id="recurring-list"></div>
+      <button class="btn btn-ghost btn-block" id="add-recurring-btn" style="margin-top:10px;"><i class="ti ti-plus"></i> 新增固定支出</button>
+    </div>
+
     <div class="section-title">自動分類規則</div>
     <div class="card">
       <p class="help" style="margin-top:0;">掃描發票或輸入品項時，會依關鍵字自動判斷分類。由上往下比對，第一個命中的規則生效。</p>
@@ -460,6 +478,32 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="form-actions">
       <button class="btn btn-danger" id="c-delete" style="display:none;"><i class="ti ti-trash"></i></button>
       <button class="btn btn-primary btn-block" id="c-save">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 固定支出編輯 -->
+<div class="overlay" id="recur-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2 id="recur-sheet-title">新增固定支出</h2><button id="recur-close">&times;</button></div>
+    <div class="field"><label>名稱</label><input type="text" id="rc-name" placeholder="例如：房租、Netflix、機車保險"></div>
+    <div class="field"><label>金額</label><input type="number" inputmode="decimal" id="rc-amount" placeholder="0" min="0"></div>
+    <div class="field"><label>每月幾號</label>
+      <select id="rc-day"></select>
+      <div class="help" style="margin-top:6px;">遇到當月沒有的日期（例如 31 號遇到 2 月）會自動改記在該月最後一天。</div>
+    </div>
+    <div class="field"><label>分類</label><select id="rc-cat"></select></div>
+    <div class="field"><label>付款方式</label>
+      <div class="seg" id="rc-pay-seg">
+        <button data-pay="cash">💵 現金</button>
+        <button data-pay="credit" class="active">💳 信用卡</button>
+      </div>
+    </div>
+    <label class="chk-row"><input type="checkbox" id="rc-active" checked><span>啟用（取消勾選就暫停，不會再自動產生）</span></label>
+    <div class="form-actions">
+      <button class="btn btn-danger" id="rc-delete" style="display:none;"><i class="ti ti-trash"></i></button>
+      <button class="btn btn-primary btn-block" id="rc-save">儲存</button>
     </div>
   </div>
 </div>
@@ -621,7 +665,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.4';
+const APP_VERSION = '3.5';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // 負數要顯示成 -NT$250 而不是 NT$-250
@@ -629,7 +673,7 @@ const fmt = n => { const v = Math.round(n||0); return (v<0?'-':'') + 'NT$' + Mat
 const toast = (msg) => { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), 2200); };
 
 // ---- IndexedDB (local-only mode) ----
-const IDB_NAME='ledger-db', IDB_VER=2;
+const IDB_NAME='ledger-db', IDB_VER=3;
 function idbOpen(){
   return new Promise((resolve,reject)=>{
     const req = indexedDB.open(IDB_NAME, IDB_VER);
@@ -638,6 +682,7 @@ function idbOpen(){
       if (!db.objectStoreNames.contains('records')) db.createObjectStore('records',{keyPath:'id'});
       if (!db.objectStoreNames.contains('categories')) db.createObjectStore('categories',{keyPath:'id'});
       if (!db.objectStoreNames.contains('rules')) db.createObjectStore('rules',{keyPath:'id'});
+      if (!db.objectStoreNames.contains('recurring')) db.createObjectStore('recurring',{keyPath:'id'});
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -672,6 +717,7 @@ async function idbDelete(store,id){
 let records = [];
 let categories = [];
 let rules = [];
+let recurring = [];
 
 // IndexedDB getAll() returns rows keyed by id, so sort by the explicit order field
 // to keep categories in a stable, user-meaningful sequence.
@@ -717,11 +763,54 @@ function onDataChanged(){
   renderCatManageList();
   renderCatGrid();
   renderRuleList();
+  renderRecurringList();
   renderList();
   renderStats();
   renderBackupStat();
   renderHeaderTotal();
   renderWallet();
+}
+
+/* =========================================================
+   每月固定支出：在設定裡登記，開啟 App 時自動補上已到期的月份。
+   以 lastRun（最後產生到哪個月）判斷要不要補，而不是檢查紀錄是否存在，
+   這樣使用者把自動產生的紀錄刪掉後，不會下次開啟又被塞回來。
+   ========================================================= */
+const ymOf = d => d.slice(0,7);
+const addMonth = (ym, n) => {
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+};
+
+async function runRecurring(){
+  const today = todayStr();
+  const thisYm = ymOf(today);
+  let created = 0;
+  for (const r of recurring){
+    if (!r.active) continue;
+    let cursor = r.lastRun ? addMonth(r.lastRun, 1) : (r.startMonth || thisYm);
+    let guard = 0;
+    while (cursor <= thisYm && guard++ < 24){
+      const [cy, cm] = cursor.split('-').map(Number);
+      const lastDay = new Date(cy, cm, 0).getDate();          // 該月天數
+      const day = Math.min(r.day, lastDay);                    // 31 號遇到小月自動收斂
+      const date = `${cy}-${String(cm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      if (date > today) break;                                 // 這個月還沒到期
+      const cat = catById(r.category);
+      await saveRecord({
+        id: uid(), date, amount: r.amount, type: 'expense',
+        category: r.category, payment: r.payment,
+        fixed: true, note: r.name, photo: null,
+        recurringId: r.id, createdAt: Date.now(),
+      });
+      created++;
+      r.lastRun = cursor;
+      await idbPut('recurring', r);
+      cursor = addMonth(cursor, 1);
+    }
+  }
+  return created;
 }
 
 /* 收入紀錄 type:'income'，其餘（含舊資料未帶 type）一律視為支出 */
@@ -769,6 +858,7 @@ async function loadLocal(){
   records = await idbGetAll('records');
   categories = await idbGetAll('categories');
   rules = await idbGetAll('rules');
+  recurring = await idbGetAll('recurring');
 
   const seeded = parseInt(localStorage.getItem('ledger-seed') || '0', 10);
   if (!categories.length){
@@ -808,7 +898,15 @@ async function loadLocal(){
 
   sortCategories();
   sortRules();
+  recurring.sort((a,b)=>(a.day||1)-(b.day||1));
   onDataChanged();
+
+  // 補上已到期但尚未產生的固定支出
+  const n = await runRecurring();
+  if (n){
+    onDataChanged();
+    toast(`已自動新增 ${n} 筆固定支出`);
+  }
 }
 
 /* ---------------- Storage API used by the UI ---------------- */
@@ -845,6 +943,18 @@ async function saveRule(rule){
 async function deleteRule(id){
   await idbDelete('rules', id);
   rules = rules.filter(r=>r.id!==id);
+  onDataChanged();
+}
+async function saveRecurring(item){
+  await idbPut('recurring', item);
+  const i = recurring.findIndex(r => r.id === item.id);
+  if (i >= 0) recurring[i] = item; else recurring.push(item);
+  recurring.sort((a,b)=>(a.day||1)-(b.day||1));
+  onDataChanged();
+}
+async function deleteRecurring(id){
+  await idbDelete('recurring', id);
+  recurring = recurring.filter(r => r.id !== id);
   onDataChanged();
 }
 
@@ -1279,6 +1389,91 @@ function renderCatManageList(){
     </div>`).join('');
   wrap.querySelectorAll('.edit-cat').forEach(b => b.addEventListener('click', () => openCatSheet(b.dataset.id)));
 }
+
+/* =========================================================
+   每月固定支出管理
+   ========================================================= */
+function renderRecurringList(){
+  const wrap = document.getElementById('recurring-list');
+  if (!wrap) return;
+  if (!recurring.length){
+    wrap.innerHTML = '<div class="empty" style="padding:1.4rem;">尚未登記固定支出</div>';
+    return;
+  }
+  const totalOn = recurring.filter(r=>r.active).reduce((s,r)=>s+r.amount,0);
+  wrap.innerHTML = recurring.map(r => {
+    const c = catById(r.category) || {icon:'❓',name:'未分類'};
+    return `<div class="recur-row${r.active?'':' off'}" data-id="${r.id}">
+      <span class="ico">${c.icon}</span>
+      <div class="body">
+        <div class="nm">${escapeHtml(r.name)}${r.active?'':'<span class="fixed-badge" style="background:var(--border);color:var(--sub)">已暫停</span>'}</div>
+        <div class="kw">每月 ${r.day} 號・${catLabel(c)}・${r.payment==='cash'?'現金':'信用卡'}</div>
+      </div>
+      <span class="ramt">${fmt(r.amount)}</span>
+      <button class="icon-btn edit-recur" data-id="${r.id}"><i class="ti ti-pencil"></i></button>
+    </div>`;
+  }).join('') + `<div class="recur-total">啟用中每月合計 <b>${fmt(totalOn)}</b></div>`;
+  wrap.querySelectorAll('.edit-recur').forEach(b =>
+    b.addEventListener('click', () => openRecurSheet(b.dataset.id)));
+}
+
+let editingRecurId = null;
+function openRecurSheet(id){
+  editingRecurId = id || null;
+  const r = id ? recurring.find(x=>x.id===id) : null;
+  document.getElementById('recur-sheet-title').textContent = r ? '編輯固定支出' : '新增固定支出';
+  document.getElementById('rc-name').value = r ? r.name : '';
+  document.getElementById('rc-amount').value = r ? r.amount : '';
+  const daySel = document.getElementById('rc-day');
+  daySel.innerHTML = Array.from({length:31}, (_,i)=>`<option value="${i+1}">${i+1} 號</option>`).join('');
+  daySel.value = String(r ? r.day : 1);
+  const catSel = document.getElementById('rc-cat');
+  catSel.innerHTML = categories.map(c=>`<option value="${c.id}">${c.icon} ${catLabel(c)}</option>`).join('');
+  catSel.value = r ? r.category : (categories.find(c=>c.fixed)?.id || categories[0]?.id || '');
+  const pay = r ? r.payment : 'credit';
+  document.querySelectorAll('#rc-pay-seg button').forEach(b=>b.classList.toggle('active', b.dataset.pay===pay));
+  document.getElementById('rc-active').checked = r ? !!r.active : true;
+  document.getElementById('rc-delete').style.display = r ? 'inline-flex' : 'none';
+  document.getElementById('recur-overlay').classList.add('show');
+}
+document.getElementById('add-recurring-btn').addEventListener('click', () => openRecurSheet(null));
+document.getElementById('recur-close').addEventListener('click', () => document.getElementById('recur-overlay').classList.remove('show'));
+document.getElementById('recur-overlay').addEventListener('click', (e)=>{ if(e.target.id==='recur-overlay') e.currentTarget.classList.remove('show'); });
+document.getElementById('rc-pay-seg').addEventListener('click', (e)=>{
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#rc-pay-seg button').forEach(x=>x.classList.toggle('active', x===b));
+});
+
+document.getElementById('rc-save').addEventListener('click', async () => {
+  const name = document.getElementById('rc-name').value.trim();
+  const amount = parseFloat(document.getElementById('rc-amount').value);
+  if (!name){ toast('請輸入名稱'); return; }
+  if (!amount || amount <= 0){ toast('請輸入金額'); return; }
+  const old = editingRecurId ? recurring.find(r=>r.id===editingRecurId) : null;
+  const item = {
+    id: editingRecurId || uid(),
+    name, amount,
+    day: parseInt(document.getElementById('rc-day').value, 10),
+    category: document.getElementById('rc-cat').value,
+    payment: document.querySelector('#rc-pay-seg button.active').dataset.pay,
+    active: document.getElementById('rc-active').checked,
+    // 新登記的從本月開始算，不回頭補以前的月份
+    startMonth: old ? old.startMonth : todayStr().slice(0,7),
+    lastRun: old ? old.lastRun : '',
+  };
+  await saveRecurring(item);
+  document.getElementById('recur-overlay').classList.remove('show');
+  const n = await runRecurring();          // 若今天已過該日，立刻補上本月這筆
+  if (n){ onDataChanged(); toast(`已儲存，並新增 ${n} 筆`); }
+  else toast('已儲存');
+});
+document.getElementById('rc-delete').addEventListener('click', async () => {
+  if (!editingRecurId) return;
+  if (!confirm('刪除這筆固定支出設定？\n已經產生的紀錄不會被刪除。')) return;
+  await deleteRecurring(editingRecurId);
+  document.getElementById('recur-overlay').classList.remove('show');
+  toast('已刪除設定');
+});
 
 /* =========================================================
    Auto-classify rules UI
@@ -2615,7 +2810,7 @@ function renderBackupStat(){
 }
 
 document.getElementById('export-btn').addEventListener('click', () => {
-  const payload = { records, categories, rules, exportedAt: new Date().toISOString() };
+  const payload = { records, categories, rules, recurring, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2636,6 +2831,7 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
     if (!confirm(`匯入 ${data.records?.length||0} 筆紀錄與 ${data.categories?.length||0} 個分類？（將與現有資料合併，相同ID會覆蓋）`)) return;
     for (const c of (data.categories||[])) await saveCategory(c);
     for (const r of (data.rules||[])) await saveRule(r);
+    for (const r of (data.recurring||[])) await saveRecurring(r);
     for (const r of (data.records||[])) await saveRecord(r);
     toast('匯入完成');
   }catch(err){
