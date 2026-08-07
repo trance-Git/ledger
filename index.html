@@ -64,6 +64,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:15px;font-family:inherit;}
 .field textarea{resize:vertical;min-height:56px;}
 .amount-input{font-size:30px;font-weight:700;text-align:center;padding:14px !important;}
+.calc-eq{text-align:center;font-size:15px;font-weight:600;color:var(--blue);margin-top:6px;}
+.calc-keys{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px;}
+.calc-keys button{padding:11px 0;border-radius:9px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:16px;font-weight:600;cursor:pointer;}
+.calc-keys button:active{background:var(--blue-bg);border-color:var(--blue);color:var(--blue);}
+.calc-keys button[data-act]{color:var(--sub);font-size:14px;}
 .seg{display:flex;gap:8px;}
 .seg button{flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;}
 .seg button.active[data-pay=cash]{background:var(--green-bg);color:var(--green);border-color:var(--green);}
@@ -456,7 +461,18 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
       <button class="btn btn-ghost" id="quick-photo-btn"><i class="ti ti-camera"></i> 拍收據</button>
     </div>
 
-    <div class="field"><input type="text" inputmode="decimal" class="amount-input" id="r-amount" placeholder="0" autocomplete="off"></div>
+    <div class="field">
+      <input type="text" inputmode="decimal" class="amount-input" id="r-amount" placeholder="0" autocomplete="off">
+      <div class="calc-eq" id="r-calc-result" style="display:none;"></div>
+      <div class="calc-keys" id="r-calc-keys">
+        <button type="button" data-op="+">＋</button>
+        <button type="button" data-op="-">－</button>
+        <button type="button" data-op="*">×</button>
+        <button type="button" data-op="/">÷</button>
+        <button type="button" data-act="back"><i class="ti ti-backspace"></i></button>
+        <button type="button" data-act="clear">C</button>
+      </div>
+    </div>
 
     <div class="field" id="photo-field" style="display:none;">
       <div class="photo-area" id="photo-area"></div>
@@ -706,13 +722,66 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.8';
+const APP_VERSION = '3.9';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-/* 金額輸入欄的千分位。type=number 無法顯示逗號，故改用 text，
-   邊打邊格式化；重排字串會讓游標跳到最後，因此以「游標前的數字個數」還原位置。 */
-function attachThousands(el){
+/* 金額欄位支援四則運算（例如 120+80）。
+   不用 eval，改以 shunting-yard 轉後序再求值，避免執行任意字串。 */
+const CALC_PREC = { '+':1, '-':1, '*':2, '/':2 };
+function evalExpr(input){
+  const s = String(input).replace(/[,\s]/g,'')
+    .replace(/[×xX]/g,'*').replace(/[÷]/g,'/').replace(/[−–]/g,'-');
+  if (!s) return null;
+  if (!/^[0-9+\-*/.()]+$/.test(s)) return null;
+  const tokens = s.match(/\d+\.?\d*|\.\d+|[+\-*/()]/g);
+  if (!tokens) return null;
+
+  const out = [], ops = [];
+  let prev = null;
+  for (const t of tokens){
+    if (/^[\d.]/.test(t)){ out.push(parseFloat(t)); prev = 'num'; }
+    else if (t === '('){ ops.push(t); prev = '('; }
+    else if (t === ')'){
+      while (ops.length && ops[ops.length-1] !== '(') out.push(ops.pop());
+      if (!ops.length) return null;
+      ops.pop(); prev = ')';
+    } else {
+      if (t === '-' && (prev === null || prev === '(' || prev === 'op')) out.push(0);  // 一元負號
+      while (ops.length && CALC_PREC[ops[ops.length-1]] >= CALC_PREC[t]) out.push(ops.pop());
+      ops.push(t); prev = 'op';
+    }
+  }
+  while (ops.length){ const o = ops.pop(); if (o === '(') return null; out.push(o); }
+
+  const st = [];
+  for (const t of out){
+    if (typeof t === 'number'){ st.push(t); continue; }
+    const b = st.pop(), a = st.pop();
+    if (a === undefined || b === undefined) return null;
+    st.push(t === '+' ? a+b : t === '-' ? a-b : t === '*' ? a*b : (b === 0 ? NaN : a/b));
+  }
+  const v = st.length === 1 ? st[0] : null;
+  return (v == null || !isFinite(v)) ? null : Math.round(v*100)/100;
+}
+const hasOperator = s => /[+\-*/×÷()]/.test(String(s).replace(/^-/,''));
+
+/* 純數字時即時加千分位；含運算子時保留算式原樣，改在下方顯示計算結果。
+   重排字串會讓游標跳到最後，故以「游標前的數字個數」還原位置。 */
+function attachThousands(el, resultId){
+  const res = resultId ? document.getElementById(resultId) : null;
+  const refresh = () => {
+    if (!res) return;
+    const v = evalExpr(el.value);
+    const show = hasOperator(el.value) && v != null;
+    res.textContent = show ? '= ' + fmt(v) : '';
+    res.style.display = show ? 'block' : 'none';
+  };
   el.addEventListener('input', () => {
+    if (hasOperator(el.value)){
+      el.value = el.value.replace(/[^0-9+\-*/.()×÷]/g,'');   // 算式模式不插逗號
+      refresh();
+      return;
+    }
     const before = el.value.slice(0, el.selectionStart).replace(/[^\d]/g,'').length;
     const raw = el.value.replace(/[^\d.]/g,'');
     const [int, ...rest] = raw.split('.');
@@ -726,9 +795,12 @@ function attachThousands(el){
     }
     if (before === 0) pos = 0;
     el.setSelectionRange(pos, pos);
+    refresh();
   });
+  el._calcRefresh = refresh;
 }
-const numVal = id => parseFloat(String(document.getElementById(id).value).replace(/,/g,'')) || 0;
+// 存檔時一律取算式結果
+const numVal = id => evalExpr(document.getElementById(id).value) ?? 0;
 const setAmount = (id, v) => {
   document.getElementById(id).value =
     (v === '' || v == null) ? '' : Number(v).toLocaleString('en-US');
@@ -1959,6 +2031,7 @@ function openRecordSheet(rec){
   editingId = rec ? rec.id : null;
   document.getElementById('record-sheet-title').textContent = rec ? '編輯支出' : '新增支出';
   setAmount('r-amount', rec ? rec.amount : '');
+  document.getElementById('r-amount')._calcRefresh?.();   // 清掉上一次的算式結果
   document.getElementById('r-date').value = rec ? rec.date : todayStr();
   document.getElementById('r-note').value = rec ? (rec.note||'') : '';
   document.getElementById('r-fixed').checked = rec ? !!rec.fixed : false;
@@ -3298,7 +3371,24 @@ function renderSectionCounts(){
 }
 applySections();
 initPrizeUI();
-['r-amount','rc-amount'].forEach(id => attachThousands(document.getElementById(id)));
+attachThousands(document.getElementById('r-amount'), 'r-calc-result');
+attachThousands(document.getElementById('rc-amount'));
+
+/* 運算鍵：手機的數字鍵盤打不出 +−×÷，故用按鍵插入 */
+document.getElementById('r-calc-keys').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const el = document.getElementById('r-amount');
+  if (b.dataset.act === 'clear') el.value = '';
+  else if (b.dataset.act === 'back') el.value = el.value.slice(0, -1);
+  else {
+    const cur = el.value.replace(/,/g,'');
+    if (!cur) return;                                   // 開頭不接運算子
+    el.value = /[+\-*/]$/.test(cur) ? cur.slice(0,-1) + b.dataset.op   // 連按就換掉
+                                    : cur + b.dataset.op;
+  }
+  el.dispatchEvent(new Event('input', { bubbles:true }));
+  el.focus();
+});
 
 /* =========================================================
    Bottom nav / page switching
