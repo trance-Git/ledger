@@ -200,6 +200,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .csv-prev-i{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;}
 .csv-prev-i > span:first-child{overflow:hidden;min-width:0;}
 .csv-prev-i .qty{display:block;font-size:11px;color:var(--sub2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.csv-prev.skipped{opacity:.45;}
+.csv-prev.skipped .csv-prev-i{text-decoration:line-through;}
+.csv-skip{background:none;border:none;color:var(--sub2);font-size:15px;cursor:pointer;padding:2px 4px;line-height:1;}
+.csv-prev.skipped .csv-skip{color:var(--blue);}
+.skip-tag{font-size:10.5px;background:var(--border);color:var(--sub);padding:2px 7px;border-radius:5px;}
 .csv-paybar{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--sub);padding:8px 10px;margin-bottom:8px;background:var(--bg);border-radius:9px;}
 .csv-paybar b{color:var(--text);}
 .ei-status{font-size:12.5px;line-height:1.7;margin-top:10px;padding:10px 12px;border-radius:9px;background:var(--bg);display:none;}
@@ -722,7 +727,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '3.9';
+const APP_VERSION = '4.0';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -3143,9 +3148,13 @@ function renderCsvSheet(fileName){
     inv.payment = inv.payment || sellerPayment(inv.seller);
   }
 
+  // 預覽階段還沒寫入，排除只是不匯入，可隨時還原
+  const keep = d.fresh.filter(i => !i.skip);
+  const skipped = d.fresh.length - keep.length;
+
   const byCat = {};
   let recCount = 0, total = 0;
-  for (const inv of d.fresh){
+  for (const inv of keep){
     recCount += inv.groups.length;
     for (const g of inv.groups){ byCat[g.category] = (byCat[g.category]||0) + g.amount; total += g.amount; }
   }
@@ -3154,6 +3163,7 @@ function renderCsvSheet(fileName){
   document.getElementById('csv-meta').innerHTML =
     `<b>${escapeHtml(fileName)}</b><br>格式：${d.format}　分隔：${d.delim === '\t' ? 'Tab' : d.delim}<br>` +
     `發票 <b>${d.invoices.length}</b> 張` + (dup ? `（其中 ${dup} 張已匯入過，將略過）` : '') +
+    (skipped ? `（已排除 ${skipped} 張）` : '') +
     `　將新增 <b>${recCount}</b> 筆、合計 <b>${fmt(total)}</b>`;
 
   const rate = Math.round(d.reconciled*100);
@@ -3163,17 +3173,22 @@ function renderCsvSheet(fileName){
   document.getElementById('csv-cols').innerHTML = '偵測到的欄位：' +
     Object.entries(d.cols).filter(([,v])=>v>=0).map(([k,v])=>`${k}=第${v+1}欄`).join('　');
 
-  const cashN = d.fresh.filter(i=>i.payment==='cash').length;
+  const cashN = keep.filter(i=>i.payment==='cash').length;
   document.getElementById('csv-paybar').innerHTML =
-    `<span>💵 現金 <b>${cashN}</b>　💳 信用卡 <b>${d.fresh.length-cashN}</b></span>` +
+    `<span>💵 現金 <b>${cashN}</b>　💳 信用卡 <b>${keep.length-cashN}</b></span>` +
     `<span><button class="btn-link" data-all="cash">全設現金</button>` +
     `<button class="btn-link" data-all="credit" style="margin-left:10px">全設信用卡</button></span>`;
 
   document.getElementById('csv-items').innerHTML = d.fresh.map((inv, idx) => `
-    <div class="csv-prev">
+    <div class="csv-prev${inv.skip ? ' skipped' : ''}">
       <div class="csv-prev-h">
         <span>${inv.date}　${escapeHtml(inv.seller || inv.invNum || '')}</span>
-        <span class="csv-pay" data-idx="${idx}" role="button">${inv.payment==='cash' ? '💵 現金' : '💳 信用卡'}</span>
+        <span style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          ${inv.skip ? '<span class="skip-tag">已排除</span>'
+                     : `<span class="csv-pay" data-idx="${idx}" role="button">${inv.payment==='cash' ? '💵 現金' : '💳 信用卡'}</span>`}
+          <button class="csv-skip" data-idx="${idx}" title="${inv.skip ? '還原' : '不匯入這張'}">
+            <i class="ti ti-${inv.skip ? 'arrow-back-up' : 'x'}"></i></button>
+        </span>
       </div>
       ${inv.groups.map(g => {
         const c = catById(g.category) || {icon:'❓',name:'?'};
@@ -3189,16 +3204,22 @@ function renderCsvSheet(fileName){
     }).join('　') || '（沒有可匯入的資料）';
 
   const saveBtn = document.getElementById('csv-save');
-  saveBtn.disabled = !d.fresh.length;
-  saveBtn.textContent = d.fresh.length ? `確認匯入 ${recCount} 筆` : '沒有新資料可匯入';
+  saveBtn.disabled = !keep.length;
+  saveBtn.textContent = keep.length ? `確認匯入 ${recCount} 筆`
+    : (d.fresh.length ? '全部已排除' : '沒有新資料可匯入');
 
   document.querySelectorAll('.csv-pay').forEach(el => el.addEventListener('click', () => {
     const inv = d.fresh[+el.dataset.idx];
     inv.payment = inv.payment === 'cash' ? 'credit' : 'cash';
     renderCsvSheet(fileName);
   }));
+  document.querySelectorAll('.csv-skip').forEach(el => el.addEventListener('click', () => {
+    const inv = d.fresh[+el.dataset.idx];
+    inv.skip = !inv.skip;
+    renderCsvSheet(fileName);
+  }));
   document.querySelectorAll('#csv-paybar .btn-link').forEach(b => b.addEventListener('click', () => {
-    for (const inv of d.fresh) inv.payment = b.dataset.all;
+    for (const inv of d.fresh) if (!inv.skip) inv.payment = b.dataset.all;
     renderCsvSheet(fileName);
   }));
 }
@@ -3211,9 +3232,11 @@ document.getElementById('csv-overlay').addEventListener('click', (e) => {
 });
 
 document.getElementById('csv-save').addEventListener('click', async () => {
-  const d = csvDraft; if (!d || !d.fresh.length) return;
+  const d = csvDraft; if (!d) return;
+  const keep = d.fresh.filter(i => !i.skip);
+  if (!keep.length) return;
   let saved = 0;
-  for (const inv of d.fresh){
+  for (const inv of keep){
     const stamp = Date.now();
     for (const g of inv.groups){
       const cat = catById(g.category);
@@ -3226,11 +3249,12 @@ document.getElementById('csv-save').addEventListener('click', async () => {
       saved++;
     }
   }
-  rememberSellerPayment(d.fresh);
+  rememberSellerPayment(keep);
   document.getElementById('csv-overlay').classList.remove('show');
   const st = document.getElementById('csv-status');
   st.className = 'ei-status show ok';
-  st.innerHTML = `✅ 已匯入 ${d.fresh.length} 張發票、${saved} 筆記錄`;
+  const skipped = d.fresh.length - keep.length;
+  st.innerHTML = `✅ 已匯入 ${keep.length} 張發票、${saved} 筆記錄` + (skipped ? `（已排除 ${skipped} 張）` : '');
   csvDraft = null;
   setMonthAll(true); renderList();
   toast(`已匯入 ${saved} 筆記錄`);
