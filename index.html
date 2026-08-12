@@ -331,8 +331,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
   <!-- 統計 -->
   <div id="page-stats" class="page">
     <div class="period-tabs">
-      <button data-period="day" class="active">日</button>
-      <button data-period="month">月</button>
+      <button data-period="month" class="active">月</button>
       <button data-period="year">年</button>
     </div>
     <div class="month-nav" id="period-picker-wrap"></div>
@@ -727,7 +726,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.1';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -2575,8 +2574,7 @@ function jumpToMonth(date){
 /* =========================================================
    Stats (統計) rendering
    ========================================================= */
-let statsPeriod = 'day';
-let statsDate = todayStr();
+let statsPeriod = 'month';
 let statsMonth = todayStr().slice(0,7);
 let statsYear = String(new Date().getFullYear());
 let pieChart = null, trendChart = null;
@@ -2596,11 +2594,7 @@ document.querySelectorAll('.period-tabs button').forEach(btn => btn.addEventList
 }));
 
 function shiftPeriod(delta){
-  if (statsPeriod === 'day'){
-    const d = new Date(statsDate + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    statsDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  } else if (statsPeriod === 'month'){
+  if (statsPeriod === 'month'){
     const [y,m] = statsMonth.split('-').map(Number);
     const d = new Date(y, m - 1 + delta, 1);
     statsMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
@@ -2612,8 +2606,7 @@ function shiftPeriod(delta){
 
 function renderPeriodPicker(){
   const wrap = document.getElementById('period-picker-wrap');
-  const input = statsPeriod === 'day'  ? `<input type="date" id="period-input" value="${statsDate}">`
-              : statsPeriod === 'month'? `<input type="month" id="period-input" value="${statsMonth}">`
+  const input = statsPeriod === 'month' ? `<input type="month" id="period-input" value="${statsMonth}">`
               : `<input type="number" id="period-input" value="${statsYear}" min="2000" max="2100">`;
   wrap.innerHTML =
     `<button id="p-prev"><i class="ti ti-chevron-left"></i></button>${input}<button id="p-next"><i class="ti ti-chevron-right"></i></button>`;
@@ -2621,15 +2614,13 @@ function renderPeriodPicker(){
   document.getElementById('p-prev').addEventListener('click', () => shiftPeriod(-1));
   document.getElementById('p-next').addEventListener('click', () => shiftPeriod(1));
   document.getElementById('period-input').addEventListener('change', (e) => {
-    if (statsPeriod==='day') statsDate = e.target.value;
-    else if (statsPeriod==='month') statsMonth = e.target.value;
+    if (statsPeriod==='month') statsMonth = e.target.value;
     else statsYear = e.target.value;
     renderStats();
   });
 }
 
 function recordsForPeriod(){
-  if (statsPeriod==='day') return records.filter(r=>r.date===statsDate);
   if (statsPeriod==='month') return records.filter(r=>r.date.startsWith(statsMonth));
   return records.filter(r=>r.date.startsWith(statsYear));
 }
@@ -2719,7 +2710,7 @@ function showCatDetail(catId, merged, payFilter){
     .filter(r => merged ? rootCat(r.category) === catId : r.category === catId)
     .sort((a,b)=> b.date.localeCompare(a.date) || b.amount - a.amount);
   const total = list.reduce((s,r)=>s+r.amount,0);
-  const period = statsPeriod==='day' ? statsDate : statsPeriod==='month' ? statsMonth : statsYear;
+  const period = statsPeriod==='month' ? statsMonth : statsYear;
 
   document.getElementById('catdetail-title').innerHTML = `${c.icon} ${catLabel(c)}`;
   document.getElementById('catdetail-meta').innerHTML =
@@ -2772,7 +2763,6 @@ function renderTrendChart(periodList){
   const title = document.getElementById('trend-title');
   const ctx = document.getElementById('trend-chart');
   if (trendChart){ trendChart.destroy(); trendChart=null; }
-  if (statsPeriod === 'day'){ card.style.display='none'; return; }
   card.style.display='block';
   let labels, sums;
   if (statsPeriod === 'month'){
