@@ -21,7 +21,9 @@
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#161616; --card:#232323; --border:#333; --text:#e8e8e8; --sub:#999; --sub2:#777;
-    --blue-bg:#16324f; --green-bg:#1c3a1f; --red-bg:#4a2020; --orange-bg:#4a2f10; }
+    --blue-bg:#16324f; --green-bg:#1c3a1f; --red-bg:#4a2020; --orange-bg:#4a2f10;
+    /* 深色底下原本的深綠/深紅對比不足，收入支出既然靠顏色分辨就得看得清楚 */
+    --green:#5cb860; --red:#ef5350; --blue:#5b9dff; --orange:#ffa726; }
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding-bottom:76px;}
@@ -110,8 +112,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .rec-row .cat-name{font-size:14px;font-weight:500;}
 .rec-row .note{font-size:12px;color:var(--sub2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rec-row .amt{font-size:15px;font-weight:700;text-align:right;flex-shrink:0;}
-.rec-row .amt.cash{color:var(--green);}
-.rec-row .amt.credit{color:var(--blue);}
+.rec-row .amt.income{color:var(--green);}
+.rec-row .amt.expense{color:var(--red);}
+.rec-row .amt .pay-ico{font-size:11px;margin-right:4px;opacity:.75;vertical-align:1px;}
+/* 收入整列加左側綠色標記，不必看金額也能一眼分辨 */
+.rec-row.is-income{border-left:3px solid var(--green);background:var(--green-bg);}
+.rec-row.is-income .ico{background:var(--card);}
 .rec-row .tag-fixed{font-size:9.5px;background:var(--orange-bg);color:var(--orange);padding:1px 5px;border-radius:5px;margin-left:4px;vertical-align:1px;}
 .filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
 .filter-bar select,.filter-bar input{padding:7px 9px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12.5px;}
@@ -133,7 +139,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .calc-row.sum{border-top:1px solid var(--border);margin-top:6px;padding-top:7px;color:var(--text);font-weight:700;font-size:14px;}
 .calc-row .pos{color:var(--green);}
 .calc-row .neg{color:var(--red);}
-.rec-row .amt.income{color:var(--green);}
 .seg button.active[data-type=expense]{background:var(--red-bg);color:var(--red);border-color:var(--red);}
 .seg button.active[data-type=income]{background:var(--green-bg);color:var(--green);border-color:var(--green);}
 .month-nav{display:flex;align-items:stretch;gap:6px;margin-bottom:10px;}
@@ -726,7 +731,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -2402,10 +2407,10 @@ function renderList(){
       const payLbl = r.payment === 'cash' ? '現金' : '信用卡';
       return `<div class="rec-swipe" data-id="${r.id}">
         <button class="swipe-del" data-id="${r.id}"><i class="ti ti-trash"></i> 刪除</button>
-        <div class="rec-row" data-id="${r.id}">
+        <div class="rec-row${inc ? ' is-income' : ''}" data-id="${r.id}">
           <div class="ico">${c.icon}</div>
           <div class="mid"><div class="cat-name">${inc ? '收入・'+payLbl : catLabel(c)}${r.fixed?'<span class="tag-fixed">固定</span>':''}</div>${r.note?`<div class="note">${escapeHtml(r.note)}</div>`:''}</div>
-          <div class="amt ${inc ? 'income' : r.payment}">${inc ? '+' : (r.payment==='cash'?'':'-')}${fmt(r.amount)}</div>
+          <div class="amt ${inc ? 'income' : 'expense'}"><span class="pay-ico">${r.payment==='cash'?'💵':'💳'}</span>${inc ? '+' : '−'}${fmt(r.amount)}</div>
         </div>
       </div>`;
     }).join('');
