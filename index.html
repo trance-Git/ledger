@@ -113,8 +113,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .rec-row .note{font-size:12px;color:var(--sub2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rec-row .amt{font-size:15px;font-weight:700;text-align:right;flex-shrink:0;}
 .rec-row .amt.income{color:var(--green);}
-.rec-row .amt.expense{color:var(--red);}
-.rec-row .amt .pay-ico{font-size:11px;margin-right:4px;opacity:.75;vertical-align:1px;}
+.rec-row .amt.cash{color:var(--red);}
+.rec-row .amt.credit{color:var(--blue);}
 /* 收入整列加左側綠色標記，不必看金額也能一眼分辨 */
 .rec-row.is-income{border-left:3px solid var(--green);background:var(--green-bg);}
 .rec-row.is-income .ico{background:var(--card);}
@@ -731,7 +731,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.3';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -2410,7 +2410,7 @@ function renderList(){
         <div class="rec-row${inc ? ' is-income' : ''}" data-id="${r.id}">
           <div class="ico">${c.icon}</div>
           <div class="mid"><div class="cat-name">${inc ? '收入・'+payLbl : catLabel(c)}${r.fixed?'<span class="tag-fixed">固定</span>':''}</div>${r.note?`<div class="note">${escapeHtml(r.note)}</div>`:''}</div>
-          <div class="amt ${inc ? 'income' : 'expense'}"><span class="pay-ico">${r.payment==='cash'?'💵':'💳'}</span>${inc ? '+' : '−'}${fmt(r.amount)}</div>
+          <div class="amt ${inc ? 'income' : r.payment}">${inc ? '+' : '−'}${fmt(r.amount)}</div>
         </div>
       </div>`;
     }).join('');
