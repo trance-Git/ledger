@@ -307,16 +307,16 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
   <div id="page-list" class="page">
     <div class="wallet-card">
       <div class="wallet-top">
-        <div><div class="lbl">💵 身上現金 <span class="lbl-note">累計・不含刷卡</span></div><div class="val" id="w-cash">NT$0</div></div>
+        <div><div class="lbl" id="w-cash-label">💵 身上現金 <span class="lbl-note">累計・不含刷卡</span></div><div class="val" id="w-cash">NT$0</div></div>
         <div style="display:flex;gap:12px;flex-shrink:0;">
           <button class="btn-link" id="w-detail">明細</button>
           <button class="btn-link" id="w-adjust">校正</button>
         </div>
       </div>
       <div class="wallet-sub">
-        <div><span>今日支出</span><b id="w-today">NT$0</b></div>
-        <div><span>本月支出</span><b id="w-month-out">NT$0</b></div>
-        <div><span>本月收支</span><b id="w-balance">NT$0</b></div>
+        <div><span id="w-out-label">本月支出</span><b id="w-month-out">NT$0</b></div>
+        <div><span id="w-in-label">本月收入</span><b id="w-month-in">NT$0</b></div>
+        <div><span id="w-bal-label">本月收支</span><b id="w-balance">NT$0</b></div>
       </div>
     </div>
     <div class="month-nav">
@@ -731,7 +731,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.3';
+const APP_VERSION = '4.4';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -965,19 +965,38 @@ async function runRecurring(){
 const isExpense = r => r.type !== 'income';
 const INCOME_CAT = '_income';
 
+/* 錢包卡跟著明細的月份篩選走。
+   現金餘額是累積值，故看過去月份時算到「該月月底為止」，
+   標題也跟著改成「月底現金」，避免與現在錢包裡的錢混淆。 */
+function walletScope(){
+  const el = document.getElementById('f-month');
+  if (typeof monthAll !== 'undefined' && monthAll) return { ym:null, label:'全部' };
+  const ym = (el && el.value) || todayStr().slice(0,7);
+  return { ym, label: ym === todayStr().slice(0,7) ? '本月' : '該月' };
+}
+
 function renderWallet(){
-  const today = todayStr(), m = today.slice(0,7);
-  let cash = 0, todaySpend = 0, monthIn = 0, monthOut = 0;
+  const { ym, label } = walletScope();
+  const isCurrent = ym === todayStr().slice(0,7);
+  const cutoff = ym ? ym + '-99' : '9999-99';      // 字串比較：涵蓋該月所有日期
+
+  let cash = 0, spend = 0, income = 0;
   for (const r of records){
     const inc = !isExpense(r);
-    if (r.payment === 'cash') cash += inc ? r.amount : -r.amount;
-    if (r.date === today && !inc) todaySpend += r.amount;
-    if (r.date.startsWith(m)){ if (inc) monthIn += r.amount; else monthOut += r.amount; }
+    if (r.payment === 'cash' && r.date <= cutoff) cash += inc ? r.amount : -r.amount;
+    if (!ym || r.date.startsWith(ym)){ if (inc) income += r.amount; else spend += r.amount; }
   }
-  const bal = monthIn - monthOut;
+  const bal = income - spend;
+
+  document.getElementById('w-cash-label').innerHTML = ym && !isCurrent
+    ? `💵 ${ym.replace('-','/')} 月底現金 <span class="lbl-note">累計・不含刷卡</span>`
+    : `💵 身上現金 <span class="lbl-note">累計・不含刷卡</span>`;
   document.getElementById('w-cash').textContent = fmt(cash);
-  document.getElementById('w-today').textContent = fmt(todaySpend);
-  document.getElementById('w-month-out').textContent = fmt(monthOut);
+  document.getElementById('w-out-label').textContent = label + '支出';
+  document.getElementById('w-in-label').textContent  = label + '收入';
+  document.getElementById('w-bal-label').textContent = label + '收支';
+  document.getElementById('w-month-out').textContent = fmt(spend);
+  document.getElementById('w-month-in').textContent  = fmt(income);
   const b = document.getElementById('w-balance');
   b.textContent = fmt(bal);
   b.style.color = bal >= 0 ? '' : '#ffcdd2';
@@ -2482,7 +2501,10 @@ function formatDateLabel(d){
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 document.getElementById('f-month').value = todayStr().slice(0,7);
-['f-month','f-pay','f-cat','f-fixed'].forEach(id => document.getElementById(id).addEventListener('change', renderList));
+// 錢包卡跟著月份走，故篩選一變就一併重繪
+function refreshListView(){ renderList(); renderWallet(); }
+['f-month','f-pay','f-cat','f-fixed'].forEach(id =>
+  document.getElementById(id).addEventListener('change', refreshListView));
 
 /* ---- 月份切換：左右鍵移動、「全部」看所有月份 ---- */
 let monthAll = false;
@@ -2492,7 +2514,7 @@ function shiftMonth(delta){
   const d = new Date(y, m - 1 + delta, 1);
   el.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   setMonthAll(false);
-  renderList();
+  refreshListView();
 }
 function setMonthAll(on){
   monthAll = on;
@@ -2566,14 +2588,14 @@ document.getElementById('w-adjust').addEventListener('click', async () => {
 
 document.getElementById('m-prev').addEventListener('click', () => shiftMonth(-1));
 document.getElementById('m-next').addEventListener('click', () => shiftMonth(1));
-document.getElementById('m-all').addEventListener('click', () => { setMonthAll(!monthAll); renderList(); });
+document.getElementById('m-all').addEventListener('click', () => { setMonthAll(!monthAll); refreshListView(); });
 
 // 掃到舊發票時把明細切到該月份，否則存完會「看不到」剛記的帳
 function jumpToMonth(date){
   if (!date) return;
   setMonthAll(false);
   document.getElementById('f-month').value = date.slice(0,7);
-  renderList();
+  refreshListView();
 }
 
 /* =========================================================
@@ -3251,7 +3273,7 @@ document.getElementById('csv-save').addEventListener('click', async () => {
   const skipped = d.fresh.length - keep.length;
   st.innerHTML = `✅ 已匯入 ${keep.length} 張發票、${saved} 筆記錄` + (skipped ? `（已排除 ${skipped} 張）` : '');
   csvDraft = null;
-  setMonthAll(true); renderList();
+  setMonthAll(true); refreshListView();
   toast(`已匯入 ${saved} 筆記錄`);
 });
 
