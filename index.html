@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -391,6 +391,11 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="card" data-sec-body="prize">
       <p class="help" style="margin-top:0;">輸入該期的中獎號碼，會自動比對所有掃描或匯入進來的發票號碼。手動記帳的紀錄沒有發票號碼，不會列入比對。</p>
       <div class="field"><label>期別</label><select id="pz-period"></select></div>
+      <div class="field"><label>號碼來源（Cloudflare Worker 網址，可留空）</label>
+        <input type="text" id="pz-proxy" placeholder="https://xxx.workers.dev" autocomplete="off">
+        <div class="help" style="margin-top:6px;">填了就能一鍵抓財政部公告的中獎號碼。留空則用照片辨識或手動輸入。</div>
+      </div>
+      <button class="btn btn-primary btn-block" id="pz-fetch-btn" style="margin-bottom:8px;"><i class="ti ti-cloud-download"></i> 自動更新號碼並對獎</button>
       <button class="btn btn-ghost btn-block" id="pz-photo-btn" style="margin-bottom:14px;"><i class="ti ti-photo-scan"></i> 用照片辨識中獎號碼</button>
       <input type="file" id="pz-photo-input" accept="image/*" style="display:none;">
       <div id="pz-ocr" class="ocr-status" style="display:none;"><i class="ti ti-loader"></i><span>辨識中...</span></div>
@@ -731,7 +736,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.5';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -1756,9 +1761,96 @@ document.getElementById('pz-photo-input').addEventListener('change', async (e) =
   }
 });
 
+/* 從財政部的 RSS 取中獎號碼。
+   格式：<title>115年 05~06月</title>
+        <link>…ETW183W2_11505</link>   ← 民國年月，用來對應期別
+        <description><p>特別獎：38548029</p><p>特獎：…</p><p>頭獎：A、B、C</p></description>
+   這份公告沒有增開六獎，那部分仍需自行輸入。 */
+function parsePrizeFeed(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.querySelector('parsererror')) return [];
+  const out = [];
+  for (const item of doc.querySelectorAll('item')){
+    const txt = sel => (item.querySelector(sel)?.textContent || '').trim();
+    const link = txt('link'), title = txt('title');
+    // 期別代碼優先取自 link 的 YYYMM（民國），抓不到再退回標題
+    let roc = (link.match(/_(\d{3})(\d{2})\s*$/) || []).slice(1);
+    if (roc.length !== 2){
+      const m = title.match(/(\d{3})\s*年\s*(\d{1,2})/);
+      if (!m) continue;
+      roc = [m[1], m[2]];
+    }
+    const key = `${parseInt(roc[0],10) + 1911}-${String(parseInt(roc[1],10)).padStart(2,'0')}`;
+
+    // description 是 HTML，逐段拆開再比對，避免「特別獎」與「特獎」互相干擾
+    const lines = txt('description').replace(/<[^>]+>/g, '\n').split('\n')
+      .map(x => x.trim()).filter(Boolean);
+    let special = '', grand = '', first = [];
+    for (const ln of lines){
+      const nums = ln.match(/\d{8}/g) || [];
+      if (!nums.length) continue;
+      if (ln.includes('特別獎')) special = nums[0];
+      else if (ln.includes('頭獎')) first = nums.slice(0, 3);
+      else if (ln.includes('特獎')) grand = nums[0];
+    }
+    if (special || grand || first.length)
+      out.push({ key, title, special, grand, first });
+  }
+  return out;
+}
+
+document.getElementById('pz-fetch-btn').addEventListener('click', async () => {
+  const st = document.getElementById('pz-status');
+  const proxy = document.getElementById('pz-proxy').value.trim().replace(/\/$/,'');
+  if (!proxy){
+    st.className = 'ei-status show err';
+    st.innerHTML = '請先填入 Worker 網址。中獎號碼那份公告沒有開放跨網域讀取，' +
+                   '網頁抓不到，需要一支 Worker 幫忙轉一手。';
+    return;
+  }
+  localStorage.setItem('ledger-prize-proxy', proxy);
+  st.className = 'ei-status show';
+  st.textContent = '取得中獎號碼中...';
+  try{
+    const res = await fetch(proxy + '?t=' + Date.now(), { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const periods = parsePrizeFeed(await res.text());
+    if (!periods.length) throw new Error('回應中找不到中獎號碼');
+
+    // 一次把公告裡的每一期都存起來，之後切換期別就有資料
+    for (const p of periods){
+      let old = {};
+      try { old = JSON.parse(localStorage.getItem(prizeStoreKey(p.key)) || '{}'); } catch(e){}
+      localStorage.setItem(prizeStoreKey(p.key), JSON.stringify({
+        special: p.special, grand: p.grand, first: p.first,
+        extra: old.extra || [],           // 增開六獎公告裡沒有，保留使用者自己填的
+      }));
+    }
+
+    // 切到公告中最新且本 App 有列出的期別
+    const sel = document.getElementById('pz-period');
+    const avail = [...sel.options].map(o => o.value);
+    const hit = periods.map(p => p.key).find(k => avail.includes(k));
+    if (hit) sel.value = hit;
+    loadPrizeInputs();
+
+    const cur = periods.find(p => p.key === sel.value);
+    st.className = 'ei-status show ok';
+    st.innerHTML = `已取得 <b>${periods.length}</b> 期號碼` +
+      (cur ? `，目前顯示 ${escapeHtml(cur.title)}` : '') +
+      '<br><span style="font-size:11.5px">增開六獎公告未提供，需自行輸入</span>';
+    document.getElementById('pz-check').click();      // 抓完直接對獎
+  }catch(e){
+    st.className = 'ei-status show err';
+    st.innerHTML = '❌ ' + e.message +
+      '<br><span style="font-size:11.5px">若顯示 Failed to fetch，多半是 Worker 網址錯誤或尚未部署。</span>';
+  }
+});
+
 function initPrizeUI(){
   const sel = document.getElementById('pz-period');
   sel.innerHTML = prizePeriods().map(p=>`<option value="${p.key}">${p.label}</option>`).join('');
+  document.getElementById('pz-proxy').value = localStorage.getItem('ledger-prize-proxy') || '';
   loadPrizeInputs();
 }
 document.getElementById('pz-period').addEventListener('change', loadPrizeInputs);
