@@ -314,9 +314,9 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
         </div>
       </div>
       <div class="wallet-sub">
-        <div><span id="w-out-label">本月支出</span><b id="w-month-out">NT$0</b></div>
-        <div><span id="w-in-label">本月收入</span><b id="w-month-in">NT$0</b></div>
-        <div><span id="w-bal-label">本月收支</span><b id="w-balance">NT$0</b></div>
+        <div><span id="w-out-label">現金支出</span><b id="w-month-out">NT$0</b></div>
+        <div><span id="w-in-label">現金收入</span><b id="w-month-in">NT$0</b></div>
+        <div><span id="w-bal-label">現金收支</span><b id="w-balance">NT$0</b></div>
       </div>
     </div>
     <div class="month-nav">
@@ -328,7 +328,13 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="filter-bar">
       <select id="f-pay"><option value="">全部方式</option><option value="cash">現金</option><option value="credit">信用卡</option></select>
       <select id="f-cat"><option value="">全部分類</option></select>
-      <select id="f-fixed"><option value="">全部項目</option><option value="1">僅固定支出</option><option value="0">僅一般支出</option></select>
+      <select id="f-fixed">
+        <option value="">全部項目</option>
+        <option value="income">僅收入</option>
+        <option value="expense">僅支出</option>
+        <option value="1">僅固定支出</option>
+        <option value="0">僅一般支出</option>
+      </select>
     </div>
     <div id="list-output"></div>
   </div>
@@ -635,7 +641,7 @@ body.modal-open{position:fixed;width:100%;overflow:hidden;}
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>餘額怎麼算的</h2><button id="wallet-close">&times;</button></div>
     <div id="wallet-detail"></div>
-    <p class="help">「身上現金」只算現金且跨月累積，所以跟只看單月、又含刷卡的「本月結餘」不會一樣。本月結餘每月從零開始，不會帶到下個月；會累積的是身上現金。</p>
+    <p class="help">這張卡只算現金，刷卡的花費請看統計頁。餘額是跨月累積的，看過去月份時算到該月月底為止；下方三格則只看目前檢視的月份。</p>
     <div class="form-actions"><button class="btn btn-primary btn-block" id="wallet-ok">了解</button></div>
   </div>
 </div>
@@ -736,7 +742,7 @@ const DEFAULT_RULES = [
   ['shopping', '衣,褲,裙,鞋,襪,帽,外套,飾品,化妝,保養品,面膜,乳液,精華,口紅,粉底,家具,寢具,枕頭,棉被,3C,手機,耳機,充電,滑鼠,鍵盤,螢幕,按摩器,模型', ''],
 ];
 
-const APP_VERSION = '4.5';
+const APP_VERSION = '4.6';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 /* 金額欄位支援四則運算（例如 120+80）。
@@ -985,10 +991,12 @@ function renderWallet(){
   const isCurrent = ym === todayStr().slice(0,7);
   const cutoff = ym ? ym + '-99' : '9999-99';      // 字串比較：涵蓋該月所有日期
 
+  // 這張卡專講現金，刷卡的花費在統計頁另有呈現，放進來反而讓餘額對不起來
   let cash = 0, spend = 0, income = 0;
   for (const r of records){
+    if (r.payment !== 'cash') continue;
     const inc = !isExpense(r);
-    if (r.payment === 'cash' && r.date <= cutoff) cash += inc ? r.amount : -r.amount;
+    if (r.date <= cutoff) cash += inc ? r.amount : -r.amount;
     if (!ym || r.date.startsWith(ym)){ if (inc) income += r.amount; else spend += r.amount; }
   }
   const bal = income - spend;
@@ -997,9 +1005,9 @@ function renderWallet(){
     ? `💵 ${ym.replace('-','/')} 月底現金 <span class="lbl-note">累計・不含刷卡</span>`
     : `💵 身上現金 <span class="lbl-note">累計・不含刷卡</span>`;
   document.getElementById('w-cash').textContent = fmt(cash);
-  document.getElementById('w-out-label').textContent = label + '支出';
-  document.getElementById('w-in-label').textContent  = label + '收入';
-  document.getElementById('w-bal-label').textContent = label + '收支';
+  document.getElementById('w-out-label').textContent = '現金支出';
+  document.getElementById('w-in-label').textContent  = '現金收入';
+  document.getElementById('w-bal-label').textContent = '現金收支';
   document.getElementById('w-month-out').textContent = fmt(spend);
   document.getElementById('w-month-in').textContent  = fmt(income);
   const b = document.getElementById('w-balance');
@@ -2497,8 +2505,12 @@ function filteredRecords(){
     if (f.pay && r.payment !== f.pay) return false;
     // 選主分類時連同其子分類一起篩出來
     if (f.cat && r.category !== f.cat && rootCat(r.category) !== f.cat) return false;
-    if (f.fixed === '1' && !r.fixed) return false;
-    if (f.fixed === '0' && r.fixed) return false;
+    // 收入沒有固定/一般之分。原本只看 r.fixed，收入的 fixed 是 false，
+    // 會被「僅一般支出」一併撈出來，故這裡先確認是不是支出。
+    if (f.fixed === 'income' && isExpense(r)) return false;
+    if (f.fixed === 'expense' && !isExpense(r)) return false;
+    if (f.fixed === '1' && (!isExpense(r) || !r.fixed)) return false;
+    if (f.fixed === '0' && (!isExpense(r) ||  r.fixed)) return false;
     return true;
   }).sort((a,b)=> b.date.localeCompare(a.date) || b.createdAt-a.createdAt);
 }
@@ -2615,38 +2627,39 @@ function setMonthAll(on){
 }
 /* 把兩個數字的算式攤開，說明為何「身上現金」與「本月結餘」不同 */
 function renderWalletDetail(){
-  const m = todayStr().slice(0,7);
+  const { ym } = walletScope();
+  const inView = r => !ym || r.date.startsWith(ym);
+  const cutoff = ym ? ym + '-99' : '9999-99';
   const sum = (f) => records.filter(f).reduce((s,r)=>s+r.amount,0);
-  const cashIn  = sum(r => r.payment==='cash' && !isExpense(r));
-  const cashOut = sum(r => r.payment==='cash' &&  isExpense(r));
-  const mIn     = sum(r => r.date.startsWith(m) && !isExpense(r));
-  const mCash   = sum(r => r.date.startsWith(m) &&  isExpense(r) && r.payment==='cash');
-  const mCredit = sum(r => r.date.startsWith(m) &&  isExpense(r) && r.payment==='credit');
-  const allIn   = sum(r => !isExpense(r));
-  const allOut  = sum(r =>  isExpense(r));
 
-  const row = (label, val, cls) =>
-    `<div class="calc-row"><span>${label}</span><span class="${cls||''}">${cls==='pos'?'+':cls==='neg'?'−':''}${fmt(Math.abs(val))}</span></div>`;
+  // 卡片只講現金，故詳細也以現金為主；刷卡另列一塊供對照。
+  const cashIn  = sum(r => r.payment==='cash' && !isExpense(r) && r.date <= cutoff);
+  const cashOut = sum(r => r.payment==='cash' &&  isExpense(r) && r.date <= cutoff);
+  const mCashIn  = sum(r => r.payment==='cash' && !isExpense(r) && inView(r));
+  const mCashOut = sum(r => r.payment==='cash' &&  isExpense(r) && inView(r));
+  const mCredit  = sum(r => r.payment==='credit' && isExpense(r) && inView(r));
+  const label = ym ? ym : '全部月份';
+
+  const row = (t, val, cls) =>
+    `<div class="calc-row"><span>${t}</span><span class="${cls||''}">${cls==='pos'?'+':cls==='neg'?'−':''}${fmt(Math.abs(val))}</span></div>`;
 
   document.getElementById('wallet-detail').innerHTML = `
     <div class="calc-block">
-      <h4>💵 身上現金 <small>只算現金・跨月累積</small></h4>
-      ${row('現金收入（所有月份）', cashIn, 'pos')}
-      ${row('現金支出（所有月份）', cashOut, 'neg')}
-      <div class="calc-row sum"><span>身上現金</span><span>${fmt(cashIn - cashOut)}</span></div>
+      <h4>💵 現金餘額 <small>${ym ? ym + ' 月底為止' : '累計'}・跨月累積</small></h4>
+      ${row('現金收入（累計）', cashIn, 'pos')}
+      ${row('現金支出（累計）', cashOut, 'neg')}
+      <div class="calc-row sum"><span>餘額</span><span>${fmt(cashIn - cashOut)}</span></div>
     </div>
     <div class="calc-block">
-      <h4>📅 本月收支 <small>${m}・含刷卡</small></h4>
-      ${row('本月收入', mIn, 'pos')}
-      ${row('本月支出・現金', mCash, 'neg')}
-      ${row('本月支出・信用卡', mCredit, 'neg')}
-      <div class="calc-row sum"><span>本月收支</span><span>${fmt(mIn - mCash - mCredit)}</span></div>
+      <h4>💵 現金收支 <small>${label}</small></h4>
+      ${row('現金收入', mCashIn, 'pos')}
+      ${row('現金支出', mCashOut, 'neg')}
+      <div class="calc-row sum"><span>現金收支</span><span>${fmt(mCashIn - mCashOut)}</span></div>
     </div>
     <div class="calc-block">
-      <h4>📊 累計結餘 <small>所有月份・含刷卡</small></h4>
-      ${row('總收入', allIn, 'pos')}
-      ${row('總支出', allOut, 'neg')}
-      <div class="calc-row sum"><span>累計結餘</span><span>${fmt(allIn - allOut)}</span></div>
+      <h4>💳 信用卡 <small>${label}・不影響現金餘額</small></h4>
+      ${row('刷卡支出', mCredit, 'neg')}
+      <div class="calc-row sum"><span>含刷卡的總支出</span><span>${fmt(mCashOut + mCredit)}</span></div>
     </div>`;
 }
 document.getElementById('w-detail').addEventListener('click', () => {
